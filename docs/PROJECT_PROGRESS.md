@@ -12,9 +12,8 @@
 | Phase | Status | Evidence |
 |---|---|---|
 | M01 frozen functional model | COMPLETE | `M01_G1_FINAL_INDEPENDENT_REAUDIT.md` |
-| M02-A technical architecture | PENDING | — |
-| M02-B physical data model | PENDING | — |
+| M02-A technical architecture | COMPLETE | `docs/architecture/M02_TECHNICAL_ARCHITECTURE.md` |
+| M02-B physical data model | COMPLETE | `docs/architecture/M02_PHYSICAL_DATA_MODEL.md` and invariant matrix |
 | M03-M04 application and persistence | PENDING | — |
 | M05-M10 vertical slice | PENDING | — |
 | M11-M13 UX, demo, QA | PENDING | — |
-
