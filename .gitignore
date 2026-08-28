@@ -8,11 +8,13 @@ htmlcov/
 
 backend/app.db
 backend/*.db
+data/*.db
 backend/.env
 
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/*.tsbuildinfo
 
 exports/*.pdf
 exports/*.log
@@ -25,4 +27,3 @@ tmp/
 .env
 .DS_Store
 Thumbs.db
-
