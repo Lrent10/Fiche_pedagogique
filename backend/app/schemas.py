@@ -31,8 +31,25 @@ class FlowUpdate(BaseModel):
     ordered_block_ids: list[int]
 
 
+class FlowItemUpdate(BaseModel):
+    teacher_action: str | None = None
+    learner_action: str | None = None
+    strategy: str | None = None
+    duration_minutes: int | None = Field(default=None, ge=0)
+    expected_result_latex: str | None = None
+
+
 class SupportCreate(BaseModel):
     title: str
+
+
+class SheetFromSupportCreate(BaseModel):
+    title: str | None = None
+    selected_block_ids: list[int] = Field(min_length=1)
+    instruction_ids: list[int] = Field(default_factory=list)
+    duration_minutes: int = Field(default=55, ge=1)
+    class_label: str = "4e"
+    part_label: str = ""
 
 
 class TeachingSessionCreate(BaseModel):

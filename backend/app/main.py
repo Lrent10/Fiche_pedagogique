@@ -20,9 +20,11 @@ from .schemas import (
     AddLocalResource,
     BlockUpdate,
     ExportCreate,
+    FlowItemUpdate,
     FlowUpdate,
     RenamePayload,
     SheetCreate,
+    SheetFromSupportCreate,
     SheetMetadataUpdate,
     SupportCreate,
     SupportUseCreate,
@@ -33,6 +35,7 @@ from .services import (
     add_local_to_support,
     copy_library_to_sheet,
     copy_library_to_support,
+    create_sheet_from_support,
     finalize_revision,
     new_support_revision,
     new_teacher_revision,
@@ -153,8 +156,37 @@ def create_sheet(payload: SheetCreate, db: Session = Depends(get_db)):
     revision = m.TeacherSheetRevision(
         sheet_id=sheet.id,
         revision_number=1,
-        identification_json=json.dumps({"établissement": "", "année scolaire": "", "date": "", "professeur": "", "classe": payload.class_label, "effectif": "", "groupes": "", "durée": f"{payload.duration_minutes} min", "numéro séance": ""}, ensure_ascii=False),
-        planning_json=json.dumps({"situation_apprentissage": "SA1 — Configurations du plan", "séquence": "Séquence 8 — Calculs sur les expressions algébriques", "stratégies": "TI / TG / TC"}, ensure_ascii=False),
+        identification_json=json.dumps({
+            "titre du cours": payload.title,
+            "numéro fiche pédagogique": sheet.code,
+            "établissement": "",
+            "année scolaire": "",
+            "discipline": "Mathématiques",
+            "date": "",
+            "classe": payload.class_label,
+            "effectif": "",
+            "nombre de groupes": "",
+            "nom du professeur": "",
+            "SA": "SA1",
+            "titre SA": "Configurations du plan",
+            "durée curriculaire SA": "",
+            "séquence": "Séquence 8",
+            "titre séquence": "Calculs sur les expressions algébriques",
+            "durée de la séance": f"{payload.duration_minutes} min",
+            "numéro de séance": "",
+        }, ensure_ascii=False),
+        planning_json=json.dumps({
+            "contenus de formation": "",
+            "compétences disciplinaires": "",
+            "compétence transdisciplinaire": "",
+            "compétences transversales": "",
+            "connaissances et techniques": "",
+            "stratégie objet d'apprentissage": "",
+            "durée": f"{payload.duration_minutes} min",
+            "stratégies d'enseignement/apprentissage": "TI / TG / TC",
+            "matériels apprenants": "",
+            "matériels enseignant": "",
+        }, ensure_ascii=False),
     )
     db.add(revision)
     db.flush()
@@ -230,6 +262,19 @@ def reorder_flow(revision_id: int, payload: FlowUpdate, db: Session = Depends(ge
     return sheet_detail(db, revision_id)
 
 
+@app.put("/api/sheets/{revision_id}/flow/{flow_id}")
+def update_flow_item(revision_id: int, flow_id: int, payload: FlowItemUpdate, db: Session = Depends(get_db)):
+    revision = db.get(m.TeacherSheetRevision, revision_id)
+    require_draft(revision)
+    flow = db.scalar(select(m.FlowItem).where(m.FlowItem.id == flow_id, m.FlowItem.teacher_revision_id == revision_id))
+    if not flow:
+        raise HTTPException(404, "Élément de déroulement introuvable.")
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(flow, field, value)
+    db.commit()
+    return sheet_detail(db, revision_id)
+
+
 @app.post("/api/sheets/{revision_id}/finalize")
 def finalize_sheet(revision_id: int, db: Session = Depends(get_db)):
     finalize_revision(db, "TEACHER", revision_id)
@@ -286,6 +331,7 @@ def delete_draft_sheet(sheet_id: int, db: Session = Depends(get_db)):
         resource_ids = [resource.id for resource in resources]
         block_ids = db.scalars(select(m.SheetBlockInstance.id).where(m.SheetBlockInstance.resource_instance_id.in_(resource_ids))).all() if resource_ids else []
         db.query(m.DocumentExport).filter(m.DocumentExport.teacher_revision_id == revision.id).delete(synchronize_session=False)
+        db.query(m.SupportUse).filter(m.SupportUse.teacher_revision_id == revision.id).delete(synchronize_session=False)
         db.query(m.FlowItem).filter(m.FlowItem.teacher_revision_id == revision.id).delete(synchronize_session=False)
         if block_ids:
             db.query(m.SheetBlockInstance).filter(m.SheetBlockInstance.id.in_(block_ids)).delete(synchronize_session=False)
@@ -355,6 +401,37 @@ def update_support_block(revision_id: int, block_id: int, payload: BlockUpdate, 
     return support_detail(db, revision_id)
 
 
+@app.put("/api/supports/{revision_id}/blocks/{block_id}/position")
+def move_support_block(revision_id: int, block_id: int, payload: PositionUpdate, db: Session = Depends(get_db)):
+    revision = db.get(m.LearnerSupportRevision, revision_id)
+    require_draft(revision)
+    block = db.execute(
+        select(m.SupportBlockInstance)
+        .join(m.SupportResourceInstance)
+        .where(
+            m.SupportBlockInstance.id == block_id,
+            m.SupportResourceInstance.support_revision_id == revision_id,
+        )
+    ).scalar_one_or_none()
+    if not block:
+        raise HTTPException(404, "Bloc introuvable dans ce support.")
+    siblings = db.scalars(
+        select(m.SupportBlockInstance)
+        .where(m.SupportBlockInstance.support_resource_instance_id == block.support_resource_instance_id)
+        .order_by(m.SupportBlockInstance.position)
+    ).all()
+    index = siblings.index(block)
+    target_index = index - 1 if payload.direction == "UP" else index + 1
+    if target_index < 0 or target_index >= len(siblings):
+        return support_detail(db, revision_id)
+    target = siblings[target_index]
+    block.position, target.position = 100000 + block.position, 200000 + target.position
+    db.flush()
+    block.position, target.position = target.position - 200000, block.position - 100000
+    db.commit()
+    return support_detail(db, revision_id)
+
+
 @app.post("/api/supports/{revision_id}/finalize")
 def finalize_support(revision_id: int, db: Session = Depends(get_db)):
     finalize_revision(db, "LEARNER", revision_id)
@@ -365,6 +442,21 @@ def finalize_support(revision_id: int, db: Session = Depends(get_db)):
 def revise_support(revision_id: int, db: Session = Depends(get_db)):
     revision = new_support_revision(db, revision_id)
     return support_detail(db, revision.id)
+
+
+@app.post("/api/supports/{revision_id}/create-teacher-sheet", status_code=201)
+def create_teacher_sheet_from_support(revision_id: int, payload: SheetFromSupportCreate, db: Session = Depends(get_db)):
+    revision = create_sheet_from_support(
+        db,
+        revision_id,
+        payload.selected_block_ids,
+        title=payload.title,
+        instruction_ids=payload.instruction_ids,
+        duration_minutes=payload.duration_minutes,
+        class_label=payload.class_label,
+        part_label=payload.part_label,
+    )
+    return sheet_detail(db, revision.id)
 
 
 @app.post("/api/exports", status_code=201)

@@ -258,6 +258,7 @@ class FlowItem(Base):
     teacher_action: Mapped[str] = mapped_column(Text, default="")
     learner_action: Mapped[str] = mapped_column(Text, default="")
     strategy: Mapped[str] = mapped_column(String(80), default="")
+    expected_result_latex: Mapped[str] = mapped_column(Text, default="")
     duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
     position: Mapped[int] = mapped_column(Integer)
     __table_args__ = (
@@ -347,10 +348,12 @@ class SupportUse(Base):
     __tablename__ = "support_uses"
     id: Mapped[int] = mapped_column(primary_key=True)
     support_revision_id: Mapped[int] = mapped_column(ForeignKey("learner_support_revisions.id"))
+    teacher_revision_id: Mapped[int | None] = mapped_column(ForeignKey("teacher_sheet_revisions.id"), nullable=True)
     teaching_session_id: Mapped[int | None] = mapped_column(ForeignKey("teaching_sessions.id"), nullable=True)
     used_on: Mapped[str] = mapped_column(String(10))
     class_label: Mapped[str] = mapped_column(String(80))
     part_label: Mapped[str] = mapped_column(String(255), default="Ensemble du support")
+    selected_block_ids_json: Mapped[str] = mapped_column(Text, default="[]")
     notes: Mapped[str] = mapped_column(Text, default="")
 
 
