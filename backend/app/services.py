@@ -157,7 +157,7 @@ def create_sheet_from_support(
         situation = db.get(m.SituationApprentissage, sequence.situation_id)
     identification = {
         "titre du cours": sheet.title,
-        "numéro fiche pédagogique": sheet.code,
+        "numéro fiche pédagogique": "",
         "établissement": "",
         "année scolaire": "",
         "discipline": "Mathématiques",
@@ -304,7 +304,7 @@ def new_teacher_revision(db: Session, revision_id: int) -> m.TeacherSheetRevisio
         db.add(copied_resource)
         db.flush()
         for block in db.scalars(select(m.SheetBlockInstance).where(m.SheetBlockInstance.resource_instance_id == resource.id).order_by(m.SheetBlockInstance.position)).all():
-            copied_block = m.SheetBlockInstance(resource_instance_id=copied_resource.id, source_block_id=block.source_block_id, block_type=block.block_type, title=block.title, content_latex=block.content_latex, position=block.position)
+            copied_block = m.SheetBlockInstance(resource_instance_id=copied_resource.id, source_block_id=block.source_block_id, block_type=block.block_type, title=block.title, content_latex=block.content_latex, visible=block.visible, position=block.position)
             db.add(copied_block)
             db.flush()
             block_map[block.id] = copied_block.id
@@ -355,7 +355,7 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
     resources = []
     for resource in db.scalars(select(m.SheetResourceInstance).where(m.SheetResourceInstance.teacher_revision_id == revision.id).order_by(m.SheetResourceInstance.position)).all():
         blocks = db.scalars(select(m.SheetBlockInstance).where(m.SheetBlockInstance.resource_instance_id == resource.id).order_by(m.SheetBlockInstance.position)).all()
-        resources.append({"id": resource.id, "origin": resource.origin, "source_resource_version_id": resource.source_resource_version_id, "title": resource.title, "adaptation_note": resource.adaptation_note, "position": resource.position, "blocks": [{"id": b.id, "block_type": b.block_type, "title": b.title, "content_latex": b.content_latex, "position": b.position} for b in blocks]})
+        resources.append({"id": resource.id, "origin": resource.origin, "source_resource_version_id": resource.source_resource_version_id, "title": resource.title, "adaptation_note": resource.adaptation_note, "position": resource.position, "blocks": [{"id": b.id, "block_type": b.block_type, "title": b.title, "content_latex": b.content_latex, "visible": b.visible, "position": b.position} for b in blocks]})
     flows = db.scalars(select(m.FlowItem).where(m.FlowItem.teacher_revision_id == revision.id).order_by(m.FlowItem.position)).all()
     support_use = db.scalar(select(m.SupportUse).where(m.SupportUse.teacher_revision_id == revision.id))
     return {

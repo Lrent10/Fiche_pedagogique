@@ -158,7 +158,7 @@ def create_sheet(payload: SheetCreate, db: Session = Depends(get_db)):
         revision_number=1,
         identification_json=json.dumps({
             "titre du cours": payload.title,
-            "numéro fiche pédagogique": sheet.code,
+            "numéro fiche pédagogique": "",
             "établissement": "",
             "année scolaire": "",
             "discipline": "Mathématiques",
@@ -241,6 +241,8 @@ def update_sheet_block(revision_id: int, block_id: int, payload: BlockUpdate, db
         block.title = payload.title
     if payload.content_latex is not None:
         block.content_latex = payload.content_latex
+    if payload.visible is not None:
+        block.visible = payload.visible
     db.commit()
     return sheet_detail(db, revision_id)
 
@@ -434,6 +436,16 @@ def move_support_block(revision_id: int, block_id: int, payload: PositionUpdate,
 
 @app.post("/api/supports/{revision_id}/finalize")
 def finalize_support(revision_id: int, db: Session = Depends(get_db)):
+    detail = support_detail(db, revision_id)
+    teacher_only = {"EXPECTED_RESULT", "EXPECTED_TRACE", "SOLUTION", "CORRECTION", "TEACHER_NOTE"}
+    printable = [
+        block
+        for resource in detail["resources"]
+        for block in resource["blocks"]
+        if block["visible"] and block["block_type"] not in teacher_only
+    ]
+    if not printable:
+        raise HTTPException(409, "Ajoutez au moins un bloc visible destiné aux élèves avant de finaliser le support.")
     finalize_revision(db, "LEARNER", revision_id)
     return support_detail(db, revision_id)
 

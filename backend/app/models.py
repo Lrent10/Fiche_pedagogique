@@ -244,6 +244,7 @@ class SheetBlockInstance(Base):
     block_type: Mapped[str] = mapped_column(String(40))
     title: Mapped[str] = mapped_column(String(255))
     content_latex: Mapped[str] = mapped_column(Text)
+    visible: Mapped[bool] = mapped_column(Boolean, default=True)
     position: Mapped[int] = mapped_column(Integer)
     __table_args__ = (UniqueConstraint("resource_instance_id", "position"),)
 

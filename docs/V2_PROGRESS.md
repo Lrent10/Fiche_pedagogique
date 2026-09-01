@@ -1,6 +1,6 @@
-# V2-01 / V2-02 progress
+# V2-01 / V2-02 / V2-02B progress
 
-Status: implementation and final non-regression complete.
+Status: V2-02B human UX and document finalization complete with non-blocking layout items.
 
 ## Baseline preserved
 
@@ -21,15 +21,24 @@ Status: implementation and final non-regression complete.
 - Alembic revision `0002_v2_document_workflow`.
 - Automated `DOC-001..010` and `WF-001..003` coverage.
 - Rendered PNG evidence under `docs/audits/visual/`.
+- Final whole-document editor with structure, live preview, block editing, visibility and ordering.
+- Human-readable LaTeX validation and empty-support finalization guard.
+- Local typed blocks in the support editor for author-driven long documents.
+- Natural user-document labels and removal of technical export traces.
+- Reliable start/stop PID handling and fail-fast aggregate test script.
+- Human UX and three-page PDF evidence under `docs/audits/human-ux/`.
 
 ## Final verification
 
-- Backend: 24 passed, 0 failed.
+- Backend: 34 passed, 0 failed.
 - Frontend: 3 passed, 0 failed.
 - Production build: PASS.
 - Alembic upgrade to `0002_v2_document_workflow`: PASS.
 - Backend and frontend startup probes: HTTP 200 / HTTP 200.
 - Three representative PDFs: LaTeX engine, A4 portrait, visual QA PASS.
+- Long support: initial 3 pages, completed 3 pages, 3 activities and 7 printed consignes.
+- Final teacher sheet: 1 page, natural French labels, no internal identifier in document text.
+- V2-02B verdict: `PASS_WITH_NON_BLOCKING_ITEMS` (column-width figures and optional response-space compaction).
 
 ## Explicit exclusions respected
 

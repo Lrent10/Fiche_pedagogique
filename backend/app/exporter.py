@@ -21,6 +21,35 @@ FORBIDDEN_LATEX = re.compile(
     r"\\(write18|write|input|include(?!graphics)|openout|read|usepackage|documentclass|begin\s*\{document\}|end\s*\{document\}|scantokens|immediate)",
     re.IGNORECASE,
 )
+USER_DOCUMENT_MODE = True
+
+
+def natural_title(label: str, title: str) -> str:
+    """Remove an automatically repeated label while preserving the author's title."""
+    cleaned = re.sub(rf"^\s*{re.escape(label)}\s*(?:\d+\s*)?(?:[-:—]\s*)?", "", title, flags=re.IGNORECASE).strip()
+    return cleaned
+
+
+def natural_activity_title(title: str) -> str:
+    """Keep the author's wording without repeating the document-level activity label."""
+    cleaned = re.sub(r"^\s*(?:activité|consigne|application|exercice)\s*(?:\d+\s*)?(?:[-:—]\s*)?", "", title, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"^de\s+", "", cleaned, flags=re.IGNORECASE)
+    return cleaned[:1].upper() + cleaned[1:] if cleaned else cleaned
+
+
+def pedagogical_label(block_type: str, title: str) -> str:
+    if re.match(r"^\s*application\b", title, re.IGNORECASE):
+        return "Application"
+    return {
+        "STATEMENT": "Mise en situation",
+        "INSTRUCTION": "Consigne",
+        "CONSIGNE": "Consigne",
+        "PROPERTY": "Propriété",
+        "DEFINITION": "Définition",
+        "METHOD": "Méthode",
+        "REMARK": "Remarque",
+        "EXERCISE": "Exercice",
+    }.get(block_type, block_type.replace("_", " ").title())
 
 
 def escape_text(value: object) -> str:
@@ -80,9 +109,10 @@ def teacher_tex(detail: dict) -> str:
     identification = detail["identification"]
     planning = detail["planning"]
     course_title = field_value(identification, "titre du cours") or detail["title"]
-    sheet_number = field_value(identification, "numéro fiche pédagogique") or detail["code"]
+    sheet_number = field_value(identification, "numéro fiche pédagogique")
     parts = [document_preamble(f"COURS DE MATHÉMATIQUES - {course_title}")]
-    parts.append(rf"\begin{{center}}\textbf{{FICHE PÉDAGOGIQUE {escape_text(sheet_number)}}}\end{{center}}")
+    heading_suffix = f" {escape_text(sheet_number)}" if sheet_number else ""
+    parts.append(rf"\begin{{center}}\textbf{{FICHE PÉDAGOGIQUE{heading_suffix}}}\end{{center}}")
     parts.append(r"\hrule\vspace{2pt}\hrule\smallskip")
     parts.append(r"\begin{center}\textbf{I. ÉLÉMENTS D'IDENTIFICATION}\end{center}")
     identity_rows = [
@@ -124,11 +154,15 @@ def teacher_tex(detail: dict) -> str:
     block_lookup = {block["id"]: block for resource in detail["resources"] for block in resource["blocks"]}
     for index, flow in enumerate(detail["flow"], 1):
         block = block_lookup.get(flow["block_instance_id"])
+        if block and block.get("visible") is False:
+            continue
         content = safe_latex(block["content_latex"]) if block else ""
         title = block.get("title", f"Élément {index}") if block else f"Élément {index}"
-        kind = block.get("block_type", "SECTION").replace("_", " ").title() if block else "Section"
+        kind = pedagogical_label(block.get("block_type", "SECTION"), title) if block else "Section"
         parts.append(r"\par\smallskip\hrule\smallskip")
-        parts.append(rf"\textbf{{{escape_text(kind)} {index} - {escape_text(title)}}}\hfill \textbf{{{flow['duration_minutes']} min}}\par")
+        display_title = natural_title(kind, title)
+        title_suffix = f" : {escape_text(display_title)}" if display_title else ""
+        parts.append(rf"\textbf{{{escape_text(kind)} {index}{title_suffix}}}\hfill \textbf{{{flow['duration_minutes']} min}}\par")
         parts.append(content + r"\par")
         if flow.get("strategy"):
             parts.append(labelled("Stratégie", flow["strategy"]) + r"\par")
@@ -139,7 +173,6 @@ def teacher_tex(detail: dict) -> str:
         expected = flow.get("expected_result_latex", "")
         if expected:
             parts.append(r"\textbf{Résultats attendus :}\par " + safe_latex(expected) + r"\par")
-    parts.append(r"\vfill{\footnotesize Révision figée et générée localement. Les références de source restent consultables dans l'application.}")
     parts.append(r"\end{document}")
     return "\n".join(parts)
 
@@ -165,14 +198,9 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
 \renewcommand{{\headrulewidth}}{{0.3pt}}
 \renewcommand{{\footrulewidth}}{{0.3pt}}
 \newcommand{{\SequenceTitle}}[1]{{\par\medskip\hrule\smallskip\textbf{{\large #1}}\smallskip\hrule\medskip}}
-\newcommand{{\ActivityTitle}}[1]{{\par\medskip\textbf{{\fbox{{Activité}} #1}}\par\smallskip}}
-\newcommand{{\InstructionTitle}}[1]{{\par\smallskip\textbf{{Consigne - #1}}\par}}
-\newcommand{{\DefinitionBlock}}[2]{{\par\smallskip\textbf{{Définition - #1}}\par\emph{{#2}}\par}}
-\newcommand{{\PropertyBlock}}[2]{{\par\smallskip\textbf{{Propriété - #1}}\par\emph{{#2}}\par}}
-\newcommand{{\RemarkBlock}}[2]{{\par\smallskip\textbf{{Remarque - #1}}\par #2\par}}
-\newcommand{{\MethodBlock}}[2]{{\par\smallskip\textbf{{Méthode - #1}}\par #2\par}}
-\newcommand{{\RememberBlock}}[2]{{\par\smallskip\textbf{{Retenons - #1}}\par\textbf{{#2}}\par}}
-\newcommand{{\ExerciseBlock}}[2]{{\par\smallskip\textbf{{Exercice - #1}}\par #2\par}}
+\newcommand{{\ActivityTitle}}[2]{{\par\medskip\textbf{{Activité #1 : #2}}\par\smallskip}}
+\newcommand{{\InstructionTitle}}[2]{{\par\smallskip\textbf{{Consigne #1#2}}\par}}
+\newcommand{{\PedagogicalBlock}}[3]{{\par\smallskip\textbf{{#1#2}}\par #3\par}}
 \newcommand{{\Separator}}{{\par\smallskip\noindent\dotfill\par\smallskip}}
 \begin{{document}}
 \begin{{center}}\textbf{{\Large {escape_text(detail['title'])}}}\\
@@ -181,8 +209,16 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
 \begin{{multicols}}{{2}}
 """]
     teacher_only = {"EXPECTED_RESULT", "EXPECTED_TRACE", "SOLUTION", "CORRECTION", "TEACHER_NOTE"}
+    instruction_number = 0
+    activity_number = 0
+    activity_types = {"STATEMENT", "ACTIVITY", "APPLICATION", "EXERCISE"}
     for resource in detail["resources"]:
-        parts.append(f"\\ActivityTitle{{{escape_text(resource['title'])}}}")
+        visible_blocks = [block for block in resource["blocks"] if block["visible"] and not (target == "LEARNER_INITIAL" and block["block_type"] in teacher_only)]
+        show_activity_title = len(visible_blocks) > 1 or any(block["block_type"] in activity_types for block in visible_blocks) or bool(re.match(r"^\s*application\b", resource["title"], re.IGNORECASE))
+        if show_activity_title:
+            activity_number += 1
+            resource_title = natural_activity_title(resource["title"])
+            parts.append(f"\\ActivityTitle{{{activity_number}}}{{{escape_text(resource_title)}}}")
         for block in resource["blocks"]:
             if not block["visible"]:
                 continue
@@ -191,20 +227,33 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
             title = escape_text(block["title"])
             content = safe_latex(block["content_latex"])
             block_type = block["block_type"]
-            if block_type in {"INSTRUCTION", "CONSIGNE"}:
-                parts.append(rf"\InstructionTitle{{{title}}}{content}")
+            if block_type in {"INSTRUCTION", "CONSIGNE"} and re.match(r"^\s*application\b", block["title"], re.IGNORECASE):
+                clean = natural_title("Application", block["title"])
+                parts.append(rf"\PedagogicalBlock{{Application}}{{{(' : ' + escape_text(clean)) if clean else ' :'}}}{{{content}}}")
+            elif block_type in {"INSTRUCTION", "CONSIGNE"}:
+                instruction_number += 1
+                clean = natural_title("Consigne", block["title"])
+                suffix = f" : {escape_text(clean)}" if clean else " :"
+                parts.append(rf"\InstructionTitle{{{instruction_number}}}{{{suffix}}}{content}")
             elif block_type == "DEFINITION":
-                parts.append(rf"\DefinitionBlock{{{title}}}{{{content}}}")
+                clean = natural_title("Définition", block["title"])
+                parts.append(rf"\PedagogicalBlock{{Définition}}{{{(' : ' + escape_text(clean)) if clean else ' :'}}}{{\emph{{{content}}}}}")
             elif block_type == "PROPERTY":
-                parts.append(rf"\PropertyBlock{{{title}}}{{{content}}}")
+                clean = natural_title("Propriété", block["title"])
+                parts.append(rf"\PedagogicalBlock{{Propriété}}{{{(' : ' + escape_text(clean)) if clean else ' :'}}}{{\emph{{{content}}}}}")
             elif block_type == "REMARK":
-                parts.append(rf"\RemarkBlock{{{title}}}{{{content}}}")
+                clean = natural_title("Remarque", block["title"])
+                parts.append(rf"\PedagogicalBlock{{Remarque}}{{{(' : ' + escape_text(clean)) if clean else ' :'}}}{{{content}}}")
             elif block_type == "METHOD":
-                parts.append(rf"\MethodBlock{{{title}}}{{{content}}}")
+                clean = natural_title("Méthode", block["title"])
+                parts.append(rf"\PedagogicalBlock{{Méthode}}{{{(' : ' + escape_text(clean)) if clean else ' :'}}}{{{content}}}")
             elif block_type in {"REMEMBER", "EXPECTED_RESULT", "EXPECTED_TRACE", "SOLUTION", "CORRECTION"}:
-                parts.append(rf"\RememberBlock{{{title}}}{{{content}}}")
+                clean = natural_title("Retenons", block["title"])
+                parts.append(rf"\PedagogicalBlock{{Retenons}}{{{(' : ' + escape_text(clean)) if clean else ' :'}}}{{\textbf{{{content}}}}}")
             elif block_type in {"EXERCISE", "APPLICATION"}:
-                parts.append(rf"\ExerciseBlock{{{title}}}{{{content}}}")
+                label = "Application" if block_type == "APPLICATION" else "Exercice"
+                clean = natural_title(label, block["title"])
+                parts.append(rf"\PedagogicalBlock{{{label}}}{{{(' : ' + escape_text(clean)) if clean else ' :'}}}{{{content}}}")
             elif block_type in {"FIGURE", "TIKZ", "IMAGE"}:
                 parts.append(rf"\par\textbf{{{title}}}\par\begin{{center}}\resizebox{{\columnwidth}}{{!}}{{{content}}}\end{{center}}")
             else:

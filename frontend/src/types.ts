@@ -7,7 +7,7 @@ export type Dashboard = {
 }
 
 export type Instruction = { id: number; code: string; text: string; position: number; sequence_id: number }
-export type Block = { id: number; block_type: string; title: string; content_latex: string; position: number; visible?: boolean }
+export type Block = { id: number; block_type: string; title: string; content_latex: string; position: number; visible: boolean }
 export type Resource = {
   id: number
   code: string
