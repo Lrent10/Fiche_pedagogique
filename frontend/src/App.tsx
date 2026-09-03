@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, post, put } from './api'
 import { LatexPreview } from './LatexPreview'
 import type { Block, Dashboard, Instruction, Resource, SheetDetail, SheetSummary, SupportDetail, SupportSummary } from './types'
@@ -115,42 +115,89 @@ function SheetsPage({ sheets, instructions, onOpen, onCreated }: { sheets: Sheet
   </section>
 }
 
-function SheetEditor({ sheet, setSheet, resources, notify, refresh, close }: { sheet: SheetDetail; setSheet: (s: SheetDetail) => void; instructions: Instruction[]; resources: Resource[]; notify: (m: string) => void; refresh: () => Promise<void>; close: () => void }) {
+export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close }: { sheet: SheetDetail; setSheet: (s: SheetDetail) => void; instructions: Instruction[]; resources: Resource[]; notify: (m: string) => void; refresh: () => Promise<void>; close: () => void }) {
   const [step, setStep] = useState(0)
   const [localTitle, setLocalTitle] = useState('Ma consigne')
   const [localLatex, setLocalLatex] = useState('Développe et réduis $(2x+1)^2$.')
   const [identification, setIdentification] = useState(sheet.identification)
   const [planning, setPlanning] = useState(sheet.planning)
+  const [identificationDirty, setIdentificationDirty] = useState(false)
+  const [planningDirty, setPlanningDirty] = useState(false)
+  const [savingMetadata, setSavingMetadata] = useState(false)
+  const [metadataError, setMetadataError] = useState('')
+  const metadataSaveInFlight = useRef<Promise<SheetDetail> | null>(null)
   const [compareIds, setCompareIds] = useState<number[]>([])
   const draft = sheet.status === 'DRAFT'
+  useEffect(() => {
+    setIdentification(sheet.identification)
+    setPlanning(sheet.planning)
+    setIdentificationDirty(false)
+    setPlanningDirty(false)
+    setMetadataError('')
+  }, [sheet.id])
   async function addResource(id: number) { const updated = await post<SheetDetail>(`/api/sheets/${sheet.id}/resources/library`, { resource_version_id: id }); setSheet(updated); notify('Activité ajoutée à la fiche.') }
   async function addLocal() { const updated = await post<SheetDetail>(`/api/sheets/${sheet.id}/resources/local`, { title: localTitle, block_type: 'INSTRUCTION', content_latex: localLatex }); setSheet(updated); notify('Contenu local ajouté.') }
-  async function saveMetadata() { const updated = await put<SheetDetail>(`/api/sheets/${sheet.id}/metadata`, { identification, planning }); setSheet(updated); notify('Informations enregistrées.') }
+  async function persistMetadata(showSuccess = false) {
+    if (!draft || (!identificationDirty && !planningDirty)) return sheet
+    if (metadataSaveInFlight.current) return metadataSaveInFlight.current
+    setSavingMetadata(true)
+    setMetadataError('')
+    const request = put<SheetDetail>(`/api/sheets/${sheet.id}/metadata`, { identification, planning })
+    metadataSaveInFlight.current = request
+    try {
+      const updated = await request
+      setSheet(updated)
+      setIdentification(updated.identification)
+      setPlanning(updated.planning)
+      setIdentificationDirty(false)
+      setPlanningDirty(false)
+      if (showSuccess) notify('Informations enregistrées.')
+      return updated
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Les informations n’ont pas pu être enregistrées.'
+      setMetadataError(message)
+      throw error
+    } finally {
+      if (metadataSaveInFlight.current === request) metadataSaveInFlight.current = null
+      setSavingMetadata(false)
+    }
+  }
+  async function saveMetadata() { try { await persistMetadata(true) } catch { /* L’erreur est affichée dans le formulaire. */ } }
+  async function navigateToStep(target: number) {
+    if (target === step || metadataSaveInFlight.current) return
+    const leavesDirtyMetadata = (step === 0 && identificationDirty) || (step === 5 && planningDirty)
+    if (leavesDirtyMetadata) {
+      try { await persistMetadata() }
+      catch { return }
+    }
+    setStep(target)
+  }
   async function updateBlock(id: number, payload: Partial<Pick<Block, 'title' | 'content_latex' | 'visible'>>) { const updated = await put<SheetDetail>(`/api/sheets/${sheet.id}/blocks/${id}`, payload); setSheet(updated); notify('Modification finale enregistrée.') }
   async function updateFlow(id: number, payload: Record<string, string | number>) { const updated = await put<SheetDetail>(`/api/sheets/${sheet.id}/flow/${id}`, payload); setSheet(updated); notify('Déroulement enregistré.') }
   async function move(blockId: number, delta: number) { const ids = [...sheet.flow].sort((a, b) => a.position - b.position).map(f => f.block_instance_id); const index = ids.indexOf(blockId); const next = index + delta; if (next < 0 || next >= ids.length) return; [ids[index], ids[next]] = [ids[next], ids[index]]; setSheet(await put<SheetDetail>(`/api/sheets/${sheet.id}/flow`, { ordered_block_ids: ids })) }
-  async function finalize() { if (!confirm('Finaliser cette révision ? Elle deviendra non modifiable.')) return; setSheet(await post<SheetDetail>(`/api/sheets/${sheet.id}/finalize`)); notify('Révision finalisée.'); await refresh() }
+  async function finalize() { if (!confirm('Finaliser cette révision ? Elle deviendra non modifiable.')) return; try { await persistMetadata() } catch { return } setSheet(await post<SheetDetail>(`/api/sheets/${sheet.id}/finalize`)); notify('Révision finalisée.'); await refresh() }
   async function revise() { setSheet(await post<SheetDetail>(`/api/sheets/${sheet.id}/new-revision`)); setStep(0); notify('Nouvelle révision créée.'); await refresh() }
   async function duplicate() { setSheet(await post<SheetDetail>(`/api/sheets/${sheet.id}/duplicate`)); notify('Fiche dupliquée dans un nouveau brouillon.'); await refresh() }
   async function rename() { const title = prompt('Nouveau titre de la fiche', sheet.title); if (!title) return; setSheet(await put<SheetDetail>(`/api/sheets/${sheet.sheet_id}/rename`, { title })); notify('Fiche renommée.'); await refresh() }
   async function remove() { if (!confirm('Supprimer définitivement ce brouillon ?')) return; await api(`/api/sheets/${sheet.sheet_id}`, { method: 'DELETE' }); await refresh(); close() }
-  async function exportPdf() { const result = await post<{ download_url: string }>('/api/exports', { document_family: 'TEACHER', revision_id: sheet.id }); window.open(result.download_url, '_blank'); notify('PDF enseignant généré.') }
+  async function exportPdf() { try { await persistMetadata() } catch { return } const result = await post<{ download_url: string }>('/api/exports', { document_family: 'TEACHER', revision_id: sheet.id }); window.open(result.download_url, '_blank'); notify('PDF enseignant généré.') }
   async function recordExecution() { const actual = Number(prompt('Durée réellement effectuée (minutes)', '55')); if (!actual) return; await post('/api/teaching-sessions', { teacher_revision_id: sheet.id, taught_on: new Date().toISOString().slice(0, 10), class_label: sheet.identification.classe || '4e', actual_minutes: actual, status: 'DONE', notes: '' }); notify('Séance exécutée et progression mise à jour.') }
   const blocks = sheet.resources.flatMap(r => r.blocks)
   return <>
     <button className="back" onClick={close}>← Retour à mes fiches</button>
-    <div className="editor-head"><div><div className="meta-line"><Status value={sheet.status} /><span>{sheet.code} · Révision {sheet.revision_number}</span></div><h2>{sheet.title}</h2></div><div className="head-buttons"><button className="outline" onClick={duplicate}>Dupliquer</button>{draft && <button className="outline" onClick={rename}>Renommer</button>}{draft && <button className="danger" onClick={remove}>Supprimer</button>}{draft ? <button className="outline" onClick={saveMetadata}>Enregistrer</button> : <button className="primary" onClick={revise}>Nouvelle révision</button>}</div></div>
-    <div className="stepper" aria-label="Étapes de conception">{steps.map((label, index) => <button key={label} className={`${index === step ? 'current' : ''} ${index < step ? 'done' : ''}`} onClick={() => setStep(index)}><span>{index < step ? '✓' : index + 1}</span><small>{label}</small></button>)}</div>
+    <div className="editor-head"><div><div className="meta-line"><Status value={sheet.status} /><span>{sheet.code} · Révision {sheet.revision_number}</span></div><h2>{sheet.title}</h2></div><div className="head-buttons"><button className="outline" onClick={duplicate}>Dupliquer</button>{draft && <button className="outline" onClick={rename}>Renommer</button>}{draft && <button className="danger" onClick={remove}>Supprimer</button>}{draft ? <button className="outline" disabled={savingMetadata || (!identificationDirty && !planningDirty)} onClick={saveMetadata}>{savingMetadata ? 'Enregistrement…' : 'Enregistrer'}</button> : <button className="primary" onClick={revise}>Nouvelle révision</button>}</div></div>
+    {metadataError && <div className="inline-error" role="alert">⚠ {metadataError}</div>}
+    <div className="stepper" aria-label="Étapes de conception">{steps.map((label, index) => <button key={label} disabled={savingMetadata} className={`${index === step ? 'current' : ''} ${index < step ? 'done' : ''}`} onClick={() => void navigateToStep(index)}><span>{index < step ? '✓' : index + 1}</span><small>{label}</small></button>)}</div>
     <section className="editor-panel">
-      {step === 0 && <div><SectionTitle number="01" title="Éléments d’identification" subtitle="Renseignez les informations propres à votre séance." /> <div className="form-grid">{Object.entries(identification).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft} value={value} onChange={e => setIdentification({ ...identification, [key]: e.target.value })} /></label>)}</div></div>}
+      {step === 0 && <div><SectionTitle number="01" title="Éléments d’identification" subtitle="Renseignez les informations propres à votre séance." /> <div className="form-grid">{Object.entries(identification).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft || savingMetadata} value={value} onChange={e => { setIdentification({ ...identification, [key]: e.target.value }); setIdentificationDirty(true); setMetadataError('') }} /></label>)}</div></div>}
       {step === 1 && <div><SectionTitle number="02" title="Ancrage au programme et au guide" subtitle="Ces instructions définissent le périmètre de la séance." />{sheet.segments.map(s => <article className="instruction-row" key={s.id}><span>{s.instruction_code}</span><LatexPreview content={s.text} compact /><b>{s.planned_minutes} min</b></article>)}</div>}
       {step === 2 && <div><SectionTitle number="03" title="Choisir les activités et consignes" subtitle="Comparez les propositions sourcées et la démonstration clairement étiquetée." /><div className="resource-carousel">{resources.filter(r => r.mappings.some(m => sheet.segments.some(s => s.instruction_id === m.instruction_id))).map(resource => <div className="compare-wrap" key={resource.id}><ResourceCard resource={resource} action={draft ? () => addResource(resource.id) : undefined} /><button className={compareIds.includes(resource.id) ? 'compare selected' : 'compare'} onClick={() => setCompareIds(old => old.includes(resource.id) ? old.filter(id => id !== resource.id) : old.length < 3 ? [...old, resource.id] : old)}>□ {compareIds.includes(resource.id) ? 'Sélectionnée' : 'Comparer'}</button></div>)}</div>{compareIds.length >= 2 && <Comparison resources={resources.filter(r => compareIds.includes(r.id))} />}</div>}
       {step === 3 && <div><SectionTitle number="04" title="Adapter les contenus en LaTeX" subtitle="Les copies de la bibliothèque sont modifiables sans altérer leur source." />{blocks.map(block => <LatexEditor key={block.id} block={block} disabled={!draft} onSave={value => updateBlock(block.id, { content_latex: value })} />)}{draft && <div className="local-box"><h3>Ajouter un contenu original local</h3><input value={localTitle} onChange={e => setLocalTitle(e.target.value)} /><textarea value={localLatex} onChange={e => setLocalLatex(e.target.value)} /><LatexPreview content={localLatex} /><button className="outline" onClick={addLocal}>＋ Ajouter à la fiche</button></div>}</div>}
       {step === 4 && <div><SectionTitle number="05" title="Organiser le déroulement" subtitle="Réordonnez les blocs, précisez les stratégies et saisissez manuellement les résultats attendus." />{sheet.flow.map((flow, index) => { const block = blocks.find(b => b.id === flow.block_instance_id); const needsResult = ['INSTRUCTION', 'CONSIGNE', 'APPLICATION', 'EXERCISE'].includes(block?.block_type || ''); return <article className="flow-editor" key={flow.id}><div className="flow-row"><span className="drag">⋮⋮</span><span className="flow-index">{index + 1}</span><div><b>{block?.title || 'Bloc'}</b><LatexPreview content={block?.content_latex || ''} compact /></div><span>{flow.duration_minutes} min</span>{draft && <div className="move"><button onClick={() => move(flow.block_instance_id, -1)}>↑</button><button onClick={() => move(flow.block_instance_id, 1)}>↓</button></div>}</div><div className="flow-metadata"><label>Stratégie<input disabled={!draft} defaultValue={flow.strategy} onBlur={e => updateFlow(flow.id, { strategy: e.target.value })} /></label><label>Durée (min)<input type="number" min="0" disabled={!draft} defaultValue={flow.duration_minutes} onBlur={e => updateFlow(flow.id, { duration_minutes: Number(e.target.value) })} /></label></div>{needsResult && <ExpectedResultEditor value={flow.expected_result_latex} disabled={!draft} onSave={value => updateFlow(flow.id, { expected_result_latex: value })} />}</article> })}</div>}
-      {step === 5 && <div><SectionTitle number="06" title="Éléments de planification" subtitle="Vérifiez la cohérence avant l’aperçu." /><div className="form-grid">{Object.entries(planning).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft} value={value} onChange={e => setPlanning({ ...planning, [key]: e.target.value })} /></label>)}</div><div className="summary-strip"><span><b>{sheet.segments.length}</b> instructions</span><span><b>{sheet.resources.length}</b> activités</span><span><b>{sheet.flow.reduce((n, f) => n + f.duration_minutes, 0)}</b> minutes planifiées</span></div></div>}
+      {step === 5 && <div><SectionTitle number="06" title="Éléments de planification" subtitle="Vérifiez la cohérence avant l’aperçu." /><div className="form-grid">{Object.entries(planning).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft || savingMetadata} value={value} onChange={e => { setPlanning({ ...planning, [key]: e.target.value }); setPlanningDirty(true); setMetadataError('') }} /></label>)}</div><div className="summary-strip"><span><b>{sheet.segments.length}</b> instructions</span><span><b>{sheet.resources.length}</b> activités</span><span><b>{sheet.flow.reduce((n, f) => n + f.duration_minutes, 0)}</b> minutes planifiées</span></div></div>}
       {step === 6 && <div><SectionTitle number="07" title="Aperçu & édition finale" subtitle="Relisez ce qui sera imprimé, sélectionnez un bloc et corrigez les derniers détails." /><FinalPreparation sheet={sheet} draft={draft} onUpdate={updateBlock} onMove={move} onEditIdentification={() => setStep(0)} onEditPlanning={() => setStep(5)} /><div className="final-buttons"><button className="outline" onClick={exportPdf}>Aperçu impression (PDF)</button></div></div>}
       {step === 7 && <div className="final-box"><span className="final-icon">✓</span><h2>{draft ? 'Votre fiche est prête à être finalisée' : 'Cette révision est finalisée'}</h2><p>{draft ? 'La finalisation fige cette révision. Vous pourrez ensuite créer une nouvelle révision pour continuer à l’adapter.' : 'Elle ne peut plus être modifiée. Son PDF reste reproductible depuis ce contenu figé.'}</p><FinalChecklist sheet={sheet} /><Warnings revisionId={sheet.id} /><div className="final-buttons">{draft && <button className="primary" onClick={finalize}>Finaliser la révision</button>}<button className="outline" onClick={exportPdf}>Générer le PDF enseignant</button>{!draft && <button className="outline" onClick={recordExecution}>Marquer comme effectuée</button>}</div></div>}
-      <div className="editor-nav"><button className="outline" disabled={step === 0} onClick={() => setStep(step - 1)}>← Précédent</button><span>Étape {step + 1} sur {steps.length}</span><button className="primary" disabled={step === steps.length - 1} onClick={() => setStep(step + 1)}>Suivant →</button></div>
+      <div className="editor-nav"><button className="outline" disabled={step === 0 || savingMetadata} onClick={() => void navigateToStep(step - 1)}>← Précédent</button><span>{savingMetadata ? 'Enregistrement en cours…' : `Étape ${step + 1} sur ${steps.length}`}</span><button className="primary" disabled={step === steps.length - 1 || savingMetadata} onClick={() => void navigateToStep(step + 1)}>Suivant →</button></div>
     </section>
   </>
 }
@@ -180,7 +227,7 @@ function Comparison({ resources }: { resources: Resource[] }) { return <div clas
 
 function LibraryPage({ resources, instructions, activeSheet, onSheetChange, notify }: { resources: Resource[]; instructions: Instruction[]; activeSheet: SheetDetail | null; onSheetChange: (s: SheetDetail) => void; notify: (m: string) => void }) { const [filter, setFilter] = useState<number | 'all'>('all'); const visible = filter === 'all' ? resources : resources.filter(r => r.mappings.some(m => m.instruction_id === filter)); async function add(id: number) { if (!activeSheet) return; onSheetChange(await post<SheetDetail>(`/api/sheets/${activeSheet.id}/resources/library`, { resource_version_id: id })); notify('Ressource ajoutée à la fiche ouverte.') } return <><section className="panel"><div className="panel-head"><div><h2>Bibliothèque d’activités</h2><p>Les références sont visibles ; les démonstrations ne sont jamais présentées comme officielles.</p></div><select value={filter} onChange={e => setFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}><option value="all">Toutes les instructions</option>{instructions.map(i => <option value={i.id} key={i.id}>{i.code} — {i.text.slice(0, 55)}</option>)}</select></div>{!activeSheet && <div className="info">Ouvrez d’abord une fiche brouillon pour pouvoir y ajouter une ressource.</div>}<div className="resource-grid">{visible.map(resource => <ResourceCard key={resource.id} resource={resource} action={activeSheet?.status === 'DRAFT' ? () => add(resource.id) : undefined} />)}</div></section></> }
 
-function TeacherPreview({ sheet }: { sheet: SheetDetail }) { const lookup = new Map(sheet.resources.flatMap(r => r.blocks).map(block => [block.id, block])); return <div className="paper-preview"><div className="paper-title"><b>FICHE PÉDAGOGIQUE DE L’ENSEIGNANT</b><span>Mathématiques · 4e</span></div><h4>I. ÉLÉMENTS D’IDENTIFICATION</h4><div className="preview-grid">{Object.entries(sheet.identification).map(([k, v]) => <span key={k}><b>{k}</b>{v}</span>)}</div><h4>II. ÉLÉMENTS DE PLANIFICATION</h4><div className="preview-grid">{Object.entries(sheet.planning).map(([k, v]) => <span key={k}><b>{k}</b>{v}</span>)}</div><h4>III. DÉROULEMENT</h4>{sheet.flow.map((flow, index) => { const block = lookup.get(flow.block_instance_id); if (!block || block.visible === false) return null; return <div className="preview-block" key={flow.id}><b>{index + 1}. {block.title} · {flow.duration_minutes} min</b><LatexPreview content={block.content_latex} />{flow.strategy && <small>Stratégie : {flow.strategy}</small>}{flow.expected_result_latex && <div><strong>Résultats attendus :</strong><LatexPreview content={flow.expected_result_latex} compact /></div>}</div> })}</div> }
+export function TeacherPreview({ sheet }: { sheet: SheetDetail }) { const lookup = new Map(sheet.resources.flatMap(r => r.blocks).map(block => [block.id, block])); const discipline = sheet.identification.discipline?.trim() || 'Mathématiques'; const classLabel = sheet.identification.classe?.trim(); const heading = classLabel ? `${discipline} · ${classLabel}` : discipline; return <div className="paper-preview"><div className="paper-title"><b>FICHE PÉDAGOGIQUE DE L’ENSEIGNANT</b><span>{heading}</span></div><h4>I. ÉLÉMENTS D’IDENTIFICATION</h4><div className="preview-grid">{Object.entries(sheet.identification).map(([k, v]) => <span key={k}><b>{k}</b>{v}</span>)}</div><h4>II. ÉLÉMENTS DE PLANIFICATION</h4><div className="preview-grid">{Object.entries(sheet.planning).map(([k, v]) => <span key={k}><b>{k}</b>{v}</span>)}</div><h4>III. DÉROULEMENT</h4>{sheet.flow.map((flow, index) => { const block = lookup.get(flow.block_instance_id); if (!block || block.visible === false) return null; return <div className="preview-block" key={flow.id}><b>{index + 1}. {block.title} · {flow.duration_minutes} min</b><LatexPreview content={block.content_latex} />{flow.strategy && <small>Stratégie : {flow.strategy}</small>}{flow.expected_result_latex && <div><strong>Résultats attendus :</strong><LatexPreview content={flow.expected_result_latex} compact /></div>}</div> })}</div> }
 
 function SupportsPage({ supports, onOpen, onCreated }: { supports: SupportSummary[]; onOpen: (id: number) => void; onCreated: (s: SupportDetail) => void }) { const [title, setTitle] = useState('Support apprenant — produits remarquables'); async function create() { onCreated(await post<SupportDetail>('/api/supports', { title })) } return <section className="panel"><div className="panel-head"><div><h2>Fiches de l’apprenant</h2><p>Un support allégé : activités, consignes, propriétés et zones de réponse.</p></div></div><div className="inline-create"><input value={title} onChange={e => setTitle(e.target.value)} /><button className="primary" onClick={create}>＋ Nouveau support</button></div><div className="cards-grid">{supports.map(s => <button className="sheet-card" key={s.revision_id} onClick={() => onOpen(s.revision_id)}><div><span className="doc-icon large">◫</span><Status value={s.status} /></div><h3>{s.title}</h3><p>{s.code} · Révision {s.revision_number}</p><span className="link">Ouvrir le support →</span></button>)}</div></section> }
 
