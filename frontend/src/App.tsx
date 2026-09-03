@@ -4,6 +4,7 @@ import { LatexPreview } from './LatexPreview'
 import type { Block, Dashboard, Instruction, Resource, SheetDetail, SheetSummary, SupportDetail, SupportSummary } from './types'
 
 type View = 'dashboard' | 'sheets' | 'library' | 'supports' | 'progress' | 'sources'
+type SheetIntent = { kind: 'view' | 'create'; sequence: number }
 const steps = ['Identification', 'Programme', 'Choix des activités', 'Adaptation', 'Déroulement', 'Planification', 'Aperçu & édition finale', 'Finalisation']
 const CURRICULUM_LEVEL = '4e'
 const CLASS_LEVEL_ERROR = 'Cette fiche utilise le programme de 4e. La classe doit appartenir au niveau 4e.'
@@ -32,6 +33,8 @@ export default function App() {
   const [supports, setSupports] = useState<SupportSummary[]>([])
   const [activeSheet, setActiveSheet] = useState<SheetDetail | null>(null)
   const [activeSupport, setActiveSupport] = useState<SupportDetail | null>(null)
+  const [sheetIntent, setSheetIntent] = useState<SheetIntent | null>(null)
+  const sheetIntentSequence = useRef(0)
   const [notice, setNotice] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -51,7 +54,7 @@ export default function App() {
   useEffect(() => { void refresh() }, [refresh])
 
   async function openSheet(id: number) {
-    try { setActiveSheet(await api<SheetDetail>(`/api/sheets/${id}`)); setView('sheets') }
+    try { setActiveSheet(await api<SheetDetail>(`/api/sheets/${id}`)); setSheetIntent(null); setView('sheets') }
     catch (err) { setError((err as Error).message) }
   }
   async function openSupport(id: number) {
@@ -59,27 +62,35 @@ export default function App() {
     catch (err) { setError((err as Error).message) }
   }
   function showNotice(message: string) { setNotice(message); window.setTimeout(() => setNotice(''), 3500) }
+  function openSheets(kind: SheetIntent['kind']) {
+    sheetIntentSequence.current += 1
+    setSheetIntent({ kind, sequence: sheetIntentSequence.current })
+    setActiveSheet(null)
+    setView('sheets')
+  }
+  function openSheetsForCreation() { openSheets('create') }
+  function openSheetsForViewing() { openSheets('view') }
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">∑</span><div><strong>FicheMaths</strong><small>Bénin · 4e</small></div></div>
         <nav aria-label="Navigation principale">
-          {navItems.map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => { setView(item.id); if (item.id !== 'sheets') setActiveSheet(null); if (item.id !== 'supports') setActiveSupport(null) }}><span>{item.icon}</span>{item.label}</button>)}
+          {navItems.map(item => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => { if (item.id === 'sheets') openSheetsForViewing(); else { setView(item.id); setActiveSheet(null) } if (item.id !== 'supports') setActiveSupport(null) }}><span>{item.icon}</span>{item.label}</button>)}
         </nav>
         <div className="sidebar-foot"><span className="status-dot" /> Application locale<br /><small>MVP · données 4e</small></div>
       </aside>
       <main>
         <header className="topbar">
           <div><p className="eyebrow">Générateur pédagogique</p><h1>{navItems.find(item => item.id === view)?.label}</h1></div>
-          <div className="top-actions"><span className="level-pill">Classe de 4e</span><button className="primary small" onClick={() => { setView('sheets'); setActiveSheet(null) }}>＋ Nouvelle fiche</button></div>
+          <div className="top-actions"><span className="level-pill">Classe de 4e</span><button className="primary small" onClick={openSheetsForCreation}>＋ Nouvelle fiche</button></div>
         </header>
         {notice && <div className="toast success">✓ {notice}</div>}
         {error && <div className="toast error">{error}<button onClick={() => setError('')}>×</button></div>}
         {loading ? <div className="empty">Chargement de l’espace de travail…</div> : (
           <div className="page">
-            {view === 'dashboard' && dashboard && <DashboardPage data={dashboard} sheets={sheets} onView={setView} onOpen={openSheet} />}
-            {view === 'sheets' && (activeSheet ? <SheetEditor sheet={activeSheet} setSheet={setActiveSheet} instructions={instructions} resources={resources} notify={showNotice} refresh={refresh} close={() => setActiveSheet(null)} /> : <SheetsPage sheets={sheets} instructions={instructions} onOpen={openSheet} onCreated={(sheet) => { setActiveSheet(sheet); void refresh() }} />)}
+            {view === 'dashboard' && dashboard && <DashboardPage data={dashboard} sheets={sheets} onView={(next) => next === 'sheets' ? openSheetsForViewing() : setView(next)} onCreate={openSheetsForCreation} onOpen={openSheet} />}
+            {view === 'sheets' && (activeSheet ? <SheetEditor sheet={activeSheet} setSheet={setActiveSheet} instructions={instructions} resources={resources} notify={showNotice} refresh={refresh} close={() => setActiveSheet(null)} /> : <SheetsPage sheets={sheets} instructions={instructions} intent={sheetIntent} onIntentHandled={(sequence) => setSheetIntent(current => current?.sequence === sequence ? null : current)} onOpen={openSheet} onCreated={(sheet) => { setSheetIntent(null); setActiveSheet(sheet); void refresh() }} />)}
             {view === 'library' && <LibraryPage resources={resources} instructions={instructions} activeSheet={activeSheet} onSheetChange={setActiveSheet} notify={showNotice} />}
             {view === 'supports' && (activeSupport ? <SupportEditor support={activeSupport} setSupport={setActiveSupport} resources={resources} notify={showNotice} refresh={refresh} close={() => setActiveSupport(null)} onSheetCreated={(sheet) => { setActiveSheet(sheet); setActiveSupport(null); setView('sheets'); void refresh() }} /> : <SupportsPage supports={supports} onOpen={openSupport} onCreated={(support) => { setActiveSupport(support); void refresh() }} />)}
             {view === 'progress' && <ProgressPage />}
@@ -91,10 +102,10 @@ export default function App() {
   )
 }
 
-function DashboardPage({ data, sheets, onView, onOpen }: { data: Dashboard; sheets: SheetSummary[]; onView: (v: View) => void; onOpen: (id: number) => void }) {
+function DashboardPage({ data, sheets, onView, onCreate, onOpen }: { data: Dashboard; sheets: SheetSummary[]; onView: (v: View) => void; onCreate: () => void; onOpen: (id: number) => void }) {
   const recent = [...sheets].slice(0, 4)
   return <>
-    <section className="hero"><div><span className="badge gold">Espace enseignant</span><h2>Préparez votre prochain cours,<br />sans perdre le fil du guide.</h2><p>Choisissez une instruction, comparez les activités disponibles, adaptez-les en LaTeX puis générez vos deux fiches.</p><button className="primary" onClick={() => onView('sheets')}>Créer une fiche pédagogique →</button></div><div className="formula-card"><span>(a + b)²</span><strong>= a² + 2ab + b²</strong><i>Activité · Propriété · Application</i></div></section>
+    <section className="hero"><div><span className="badge gold">Espace enseignant</span><h2>Préparez votre prochain cours,<br />sans perdre le fil du guide.</h2><p>Choisissez une instruction, comparez les activités disponibles, adaptez-les en LaTeX puis générez vos deux fiches.</p><button className="primary" onClick={onCreate}>Créer une fiche pédagogique →</button></div><div className="formula-card"><span>(a + b)²</span><strong>= a² + 2ab + b²</strong><i>Activité · Propriété · Application</i></div></section>
     <div className="stats">
       <Stat value={data.draft_sheets} label="Fiches en brouillon" tone="blue" />
       <Stat value={data.finalized_sheets} label="Fiches finalisées" tone="green" />
@@ -111,13 +122,18 @@ function DashboardPage({ data, sheets, onView, onOpen }: { data: Dashboard; shee
 function Stat({ value, label, tone }: { value: number; label: string; tone: string }) { return <div className={`stat ${tone}`}><strong>{value}</strong><span>{label}</span></div> }
 function Status({ value }: { value: string }) { return <span className={`status ${value.toLowerCase()}`}>{value === 'DRAFT' ? 'Brouillon' : 'Finalisée'}</span> }
 
-function SheetsPage({ sheets, instructions, onOpen, onCreated }: { sheets: SheetSummary[]; instructions: Instruction[]; onOpen: (id: number) => void; onCreated: (s: SheetDetail) => void }) {
-  const [creating, setCreating] = useState(false)
+function SheetsPage({ sheets, instructions, intent, onIntentHandled, onOpen, onCreated }: { sheets: SheetSummary[]; instructions: Instruction[]; intent: SheetIntent | null; onIntentHandled: (sequence: number) => void; onOpen: (id: number) => void; onCreated: (s: SheetDetail) => void }) {
+  const [creating, setCreating] = useState(intent?.kind === 'create')
   const [title, setTitle] = useState('Produits remarquables — séance')
   const [selected, setSelected] = useState<number[]>(instructions.slice(2, 4).map(i => i.id))
+  useEffect(() => {
+    if (!intent) return
+    setCreating(intent.kind === 'create')
+    onIntentHandled(intent.sequence)
+  }, [intent, onIntentHandled])
   async function submit(event: FormEvent) { event.preventDefault(); const sheet = await post<SheetDetail>('/api/sheets', { title, instruction_ids: selected, duration_minutes: 55, class_label: '4e' }); onCreated(sheet) }
   return <section className="panel">
-    <div className="panel-head"><div><h2>Mes fiches enseignant</h2><p>Chaque finalisation fige une révision ; l’adaptation suivante crée une nouvelle version.</p></div><button className="primary" onClick={() => setCreating(!creating)}>＋ Créer une fiche</button></div>
+    <div className="panel-head"><div><h2>Mes fiches enseignant</h2><p>Chaque finalisation fige une révision ; l’adaptation suivante crée une nouvelle version.</p></div>{creating ? <button className="outline" onClick={() => setCreating(false)}>Annuler</button> : <button className="primary" onClick={() => setCreating(true)}>＋ Créer une fiche</button>}</div>
     {creating && <form className="create-form" onSubmit={submit}><label>Titre de la séance<input value={title} onChange={e => setTitle(e.target.value)} required /></label><fieldset><legend>Instructions du guide à mettre en œuvre</legend>{instructions.map(i => <label className="check" key={i.id}><input type="checkbox" checked={selected.includes(i.id)} onChange={() => setSelected(old => old.includes(i.id) ? old.filter(id => id !== i.id) : [...old, i.id])} /><span><b>{i.code}</b> {i.text}</span></label>)}</fieldset><button className="primary" disabled={!selected.length}>Commencer la conception →</button></form>}
     <div className="cards-grid">{sheets.map(sheet => <button className="sheet-card" key={sheet.revision_id} onClick={() => onOpen(sheet.revision_id)}><div><span className="doc-icon large">▤</span><Status value={sheet.status} /></div><h3>{sheet.title}</h3><p>{sheet.code} · Révision {sheet.revision_number}</p><span className="link">Ouvrir la fiche →</span></button>)}</div>
   </section>

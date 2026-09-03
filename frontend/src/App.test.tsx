@@ -4,8 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { post, put } from './api'
-import { classLabelMatchesCurriculum, SheetEditor, TeacherPreview } from './App'
+import { api, post, put } from './api'
+import App, { classLabelMatchesCurriculum, SheetEditor, TeacherPreview } from './App'
 import type { SheetDetail } from './types'
 
 vi.mock('./api', () => ({
@@ -14,6 +14,7 @@ vi.mock('./api', () => ({
   put: vi.fn(),
 }))
 
+const mockedApi = vi.mocked(api)
 const mockedPut = vi.mocked(put)
 const mockedPost = vi.mocked(post)
 const CLASS_LEVEL_ERROR = 'Cette fiche utilise le programme de 4e. La classe doit appartenir au niveau 4e.'
@@ -64,6 +65,101 @@ function renderEditor(initial = sheet()) {
   render(<Harness />)
   return { updates }
 }
+
+const instructions = [1, 2, 3, 4].map(id => ({
+  id,
+  code: `SEQ8-INS${id}`,
+  text: `Instruction ${id}`,
+  position: id,
+  sequence_id: 1,
+}))
+const existingSheet = { sheet_id: 3, revision_id: 7, code: 'FICHE-TEST', title: 'Fiche existante', revision_number: 1, status: 'DRAFT' }
+
+function mockWorkspace() {
+  mockedApi.mockImplementation(async (path: string) => {
+    if (path === '/api/dashboard') return { draft_sheets: 1, finalized_sheets: 0, resources: 0, supports: 0, open_source_issues: 0 }
+    if (path === '/api/instructions') return instructions
+    if (path === '/api/resources') return []
+    if (path === '/api/sheets') return [existingSheet]
+    if (path === '/api/supports') return []
+    if (path === '/api/sheets/7') return sheet({ title: 'Fiche existante' })
+    throw new Error(`Requête inattendue: ${path}`)
+  })
+}
+
+describe('UX-BB-002 intention explicite de création', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWorkspace()
+  })
+
+  afterEach(cleanup)
+
+  it('TEST-001 ouvre immédiatement le formulaire depuis le CTA accueil', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Créer une fiche pédagogique/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Mes fiches enseignant' })).toBeTruthy()
+    expect(screen.getByLabelText(/Titre de la séance/i)).toBeTruthy()
+  })
+
+  it('TEST-002 ne crée aucune fiche avant la soumission', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Créer une fiche pédagogique/ }))
+
+    expect(await screen.findByLabelText(/Titre de la séance/i)).toBeTruthy()
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
+  it('TEST-003 soumet une seule fois puis affiche SheetEditor', async () => {
+    mockedPost.mockResolvedValueOnce(sheet({ title: 'Nouvelle séance' }))
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Créer une fiche pédagogique/ }))
+    fireEvent.change(await screen.findByLabelText(/Titre de la séance/i), { target: { value: 'Nouvelle séance' } })
+    fireEvent.click(screen.getByRole('button', { name: /Commencer la conception/ }))
+
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    expect(mockedPost).toHaveBeenCalledWith('/api/sheets', expect.objectContaining({ title: 'Nouvelle séance' }))
+    expect(await screen.findByRole('heading', { name: 'Nouvelle séance' })).toBeTruthy()
+  })
+
+  it('TEST-004 garde le formulaire fermé lors de la navigation normale vers Mes fiches', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '▤ Mes fiches' }))
+
+    expect(await screen.findByRole('heading', { name: 'Mes fiches enseignant' })).toBeTruthy()
+    expect(screen.queryByLabelText(/Titre de la séance/i)).toBeNull()
+  })
+
+  it('TEST-005 quitte une fiche active et ouvre le formulaire via Nouvelle fiche', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Fiche existante/ }))
+    expect(await screen.findByRole('heading', { name: 'Fiche existante' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouvelle fiche' }))
+    expect(await screen.findByLabelText(/Titre de la séance/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '← Retour à mes fiches' })).toBeNull()
+  })
+
+  it('TEST-006 conserve le formulaire ouvert si l’intention de création est répétée', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Créer une fiche pédagogique/ }))
+    expect(await screen.findByLabelText(/Titre de la séance/i)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouvelle fiche' }))
+    expect(await screen.findByLabelText(/Titre de la séance/i)).toBeTruthy()
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
+  it('TEST-007 conserve la reprise d’une fiche depuis la liste', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '▤ Mes fiches' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Fiche existante/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Fiche existante' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '← Retour à mes fiches' })).toBeTruthy()
+  })
+})
 
 describe('contrat de persistance du wizard', () => {
   beforeEach(() => {
