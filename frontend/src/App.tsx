@@ -5,6 +5,14 @@ import type { Block, Dashboard, Instruction, Resource, SheetDetail, SheetSummary
 
 type View = 'dashboard' | 'sheets' | 'library' | 'supports' | 'progress' | 'sources'
 const steps = ['Identification', 'Programme', 'Choix des activités', 'Adaptation', 'Déroulement', 'Planification', 'Aperçu & édition finale', 'Finalisation']
+const CURRICULUM_LEVEL = '4e'
+const CLASS_LEVEL_ERROR = 'Cette fiche utilise le programme de 4e. La classe doit appartenir au niveau 4e.'
+
+export function classLabelMatchesCurriculum(classLabel: string, curriculumLevel = CURRICULUM_LEVEL) {
+  const normalized = classLabel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+  const match = normalized.match(/^(\d+)\s*(?:e|eme)(?:\s+.+)?$/)
+  return match?.[1] ? `${match[1]}e` === curriculumLevel.toLowerCase() : false
+}
 
 const navItems: { id: View; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Tableau de bord', icon: '⌂' },
@@ -128,6 +136,8 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
   const metadataSaveInFlight = useRef<Promise<SheetDetail> | null>(null)
   const [compareIds, setCompareIds] = useState<number[]>([])
   const draft = sheet.status === 'DRAFT'
+  const curriculumLevel = sheet.curriculum_level || CURRICULUM_LEVEL
+  const classLevelError = classLabelMatchesCurriculum(identification.classe || '', curriculumLevel) ? '' : CLASS_LEVEL_ERROR
   useEffect(() => {
     setIdentification(sheet.identification)
     setPlanning(sheet.planning)
@@ -138,7 +148,9 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
   async function addResource(id: number) { const updated = await post<SheetDetail>(`/api/sheets/${sheet.id}/resources/library`, { resource_version_id: id }); setSheet(updated); notify('Activité ajoutée à la fiche.') }
   async function addLocal() { const updated = await post<SheetDetail>(`/api/sheets/${sheet.id}/resources/local`, { title: localTitle, block_type: 'INSTRUCTION', content_latex: localLatex }); setSheet(updated); notify('Contenu local ajouté.') }
   async function persistMetadata(showSuccess = false) {
-    if (!draft || (!identificationDirty && !planningDirty)) return sheet
+    if (!draft) return sheet
+    if (classLevelError) throw new Error(classLevelError)
+    if (!identificationDirty && !planningDirty) return sheet
     if (metadataSaveInFlight.current) return metadataSaveInFlight.current
     setSavingMetadata(true)
     setMetadataError('')
@@ -165,6 +177,7 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
   async function saveMetadata() { try { await persistMetadata(true) } catch { /* L’erreur est affichée dans le formulaire. */ } }
   async function navigateToStep(target: number) {
     if (target === step || metadataSaveInFlight.current) return
+    if (draft && step === 0 && classLevelError) return
     const leavesDirtyMetadata = (step === 0 && identificationDirty) || (step === 5 && planningDirty)
     if (leavesDirtyMetadata) {
       try { await persistMetadata() }
@@ -189,7 +202,7 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
     {metadataError && <div className="inline-error" role="alert">⚠ {metadataError}</div>}
     <div className="stepper" aria-label="Étapes de conception">{steps.map((label, index) => <button key={label} disabled={savingMetadata} className={`${index === step ? 'current' : ''} ${index < step ? 'done' : ''}`} onClick={() => void navigateToStep(index)}><span>{index < step ? '✓' : index + 1}</span><small>{label}</small></button>)}</div>
     <section className="editor-panel">
-      {step === 0 && <div><SectionTitle number="01" title="Éléments d’identification" subtitle="Renseignez les informations propres à votre séance." /> <div className="form-grid">{Object.entries(identification).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft || savingMetadata} value={value} onChange={e => { setIdentification({ ...identification, [key]: e.target.value }); setIdentificationDirty(true); setMetadataError('') }} /></label>)}</div></div>}
+      {step === 0 && <div><SectionTitle number="01" title="Éléments d’identification" subtitle="Renseignez les informations propres à votre séance." /><div className="curriculum-level-note">Programme utilisé : <strong>{curriculumLevel}</strong>. La classe peut préciser une subdivision de ce niveau.</div><div className="form-grid">{Object.entries(identification).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft || savingMetadata} value={value} aria-invalid={key === 'classe' && !!classLevelError} aria-describedby={key === 'classe' && classLevelError ? 'class-level-error' : undefined} onChange={e => { setIdentification({ ...identification, [key]: e.target.value }); setIdentificationDirty(true); setMetadataError('') }} />{key === 'classe' && classLevelError && <span id="class-level-error" className="field-error" role="alert">{classLevelError}</span>}</label>)}</div></div>}
       {step === 1 && <div><SectionTitle number="02" title="Ancrage au programme et au guide" subtitle="Ces instructions définissent le périmètre de la séance." />{sheet.segments.map(s => <article className="instruction-row" key={s.id}><span>{s.instruction_code}</span><LatexPreview content={s.text} compact /><b>{s.planned_minutes} min</b></article>)}</div>}
       {step === 2 && <div><SectionTitle number="03" title="Choisir les activités et consignes" subtitle="Comparez les propositions sourcées et la démonstration clairement étiquetée." /><div className="resource-carousel">{resources.filter(r => r.mappings.some(m => sheet.segments.some(s => s.instruction_id === m.instruction_id))).map(resource => <div className="compare-wrap" key={resource.id}><ResourceCard resource={resource} action={draft ? () => addResource(resource.id) : undefined} /><button className={compareIds.includes(resource.id) ? 'compare selected' : 'compare'} onClick={() => setCompareIds(old => old.includes(resource.id) ? old.filter(id => id !== resource.id) : old.length < 3 ? [...old, resource.id] : old)}>□ {compareIds.includes(resource.id) ? 'Sélectionnée' : 'Comparer'}</button></div>)}</div>{compareIds.length >= 2 && <Comparison resources={resources.filter(r => compareIds.includes(r.id))} />}</div>}
       {step === 3 && <div><SectionTitle number="04" title="Adapter les contenus en LaTeX" subtitle="Les copies de la bibliothèque sont modifiables sans altérer leur source." />{blocks.map(block => <LatexEditor key={block.id} block={block} disabled={!draft} onSave={value => updateBlock(block.id, { content_latex: value })} />)}{draft && <div className="local-box"><h3>Ajouter un contenu original local</h3><input value={localTitle} onChange={e => setLocalTitle(e.target.value)} /><textarea value={localLatex} onChange={e => setLocalLatex(e.target.value)} /><LatexPreview content={localLatex} /><button className="outline" onClick={addLocal}>＋ Ajouter à la fiche</button></div>}</div>}

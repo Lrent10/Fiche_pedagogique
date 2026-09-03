@@ -192,7 +192,7 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
 \setlength{{\columnseprule}}{{0.25pt}}
 \setlength{{\emergencystretch}}{{2em}}
 \pagestyle{{fancy}}\fancyhf{{}}
-\lhead{{\small Mathématiques - 4e}}
+\lhead{{\small Mathématiques - {escape_text(detail.get('level', '4e'))}}}
 \rhead{{\small {escape_text(detail['title'])}}}
 \cfoot{{\thepage}}
 \renewcommand{{\headrulewidth}}{{0.3pt}}

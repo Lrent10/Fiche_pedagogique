@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { post, put } from './api'
-import { SheetEditor, TeacherPreview } from './App'
+import { classLabelMatchesCurriculum, SheetEditor, TeacherPreview } from './App'
 import type { SheetDetail } from './types'
 
 vi.mock('./api', () => ({
@@ -16,6 +16,7 @@ vi.mock('./api', () => ({
 
 const mockedPut = vi.mocked(put)
 const mockedPost = vi.mocked(post)
+const CLASS_LEVEL_ERROR = 'Cette fiche utilise le programme de 4e. La classe doit appartenir au niveau 4e.'
 
 function sheet(overrides: Partial<SheetDetail> = {}): SheetDetail {
   return {
@@ -115,16 +116,16 @@ describe('contrat de persistance du wizard', () => {
   })
 
   it('TEST-004 sauvegarde Identification avant une navigation directe du stepper', async () => {
-    mockedPut.mockResolvedValueOnce(sheet({ identification: { établissement: 'CEG Initial', discipline: 'Mathématiques', classe: '3ème B' } }))
+    mockedPut.mockResolvedValueOnce(sheet({ identification: { établissement: 'CEG Initial', discipline: 'Mathématiques', classe: '4ème B' } }))
     renderEditor()
 
-    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '3ème B' } })
+    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '4ème B' } })
     fireEvent.click(screen.getByRole('button', { name: /Planification/ }))
 
     expect(await screen.findByRole('heading', { name: 'Éléments de planification' })).toBeTruthy()
     expect(mockedPut).toHaveBeenCalledTimes(1)
     expect(mockedPut.mock.calls[0][1]).toEqual(expect.objectContaining({
-      identification: expect.objectContaining({ classe: '3ème B' }),
+      identification: expect.objectContaining({ classe: '4ème B' }),
     }))
   })
 
@@ -132,14 +133,14 @@ describe('contrat de persistance du wizard', () => {
     const pending = deferred<SheetDetail>()
     mockedPut.mockReturnValueOnce(pending.promise)
     renderEditor()
-    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '3ème B' } })
+    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '4e M1' } })
     const next = screen.getByRole('button', { name: /Suivant/ })
 
     fireEvent.click(next)
     fireEvent.click(next)
     expect(mockedPut).toHaveBeenCalledTimes(1)
 
-    await act(async () => pending.resolve(sheet({ identification: { établissement: 'CEG Initial', discipline: 'Mathématiques', classe: '3ème B' } })))
+    await act(async () => pending.resolve(sheet({ identification: { établissement: 'CEG Initial', discipline: 'Mathématiques', classe: '4e M1' } })))
     expect(await screen.findByRole('heading', { name: 'Ancrage au programme et au guide' })).toBeTruthy()
   })
 
@@ -166,8 +167,8 @@ describe('contrat de persistance du wizard', () => {
   })
 
   it('TEST-005 construit l’en-tête depuis la discipline et la classe de la révision', () => {
-    render(<TeacherPreview sheet={sheet({ identification: { établissement: '', discipline: 'Mathématiques', classe: '3ème B' } })} />)
-    expect(screen.getByText('Mathématiques · 3ème B')).toBeTruthy()
+    render(<TeacherPreview sheet={sheet({ identification: { établissement: '', discipline: 'Mathématiques', classe: '4e M1' } })} />)
+    expect(screen.getByText('Mathématiques · 4e M1')).toBeTruthy()
     expect(screen.queryByText('Mathématiques · 4e')).toBeNull()
   })
 
@@ -177,13 +178,39 @@ describe('contrat de persistance du wizard', () => {
     mockedPost.mockResolvedValueOnce({ download_url: '/exports/fiche.pdf' })
     renderEditor()
 
-    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '3ème B' } })
+    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '4e M1' } })
     fireEvent.click(screen.getByRole('button', { name: /Aperçu & édition finale/ }))
     expect(screen.queryByRole('button', { name: 'Aperçu impression (PDF)' })).toBeNull()
 
-    await act(async () => pending.resolve(sheet({ identification: { établissement: 'CEG Initial', discipline: 'Mathématiques', classe: '3ème B' } })))
+    await act(async () => pending.resolve(sheet({ identification: { établissement: 'CEG Initial', discipline: 'Mathématiques', classe: '4e M1' } })))
     fireEvent.click(await screen.findByRole('button', { name: 'Aperçu impression (PDF)' }))
     await waitFor(() => expect(mockedPost).toHaveBeenCalledWith('/api/exports', expect.objectContaining({ revision_id: 7 })))
     expect(mockedPut.mock.invocationCallOrder[0]).toBeLessThan(mockedPost.mock.invocationCallOrder[0])
+  })
+
+  it.each(['4e', '4E', '4ème', '4eme', '4e A', '4e M1', '4ème B'])(
+    'accepte la classe 4e compatible « %s »',
+    classLabel => expect(classLabelMatchesCurriculum(classLabel)).toBe(true),
+  )
+
+  it('refuse 3ème M1 avant sauvegarde et conserve l’étape Identification', async () => {
+    renderEditor()
+
+    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '3ème M1' } })
+    expect(screen.getByRole('alert').textContent).toBe(CLASS_LEVEL_ERROR)
+    fireEvent.click(screen.getByRole('button', { name: /Suivant/ }))
+
+    expect(screen.getByRole('heading', { name: 'Éléments d’identification' })).toBeTruthy()
+    expect(mockedPut).not.toHaveBeenCalled()
+  })
+
+  it('refuse aussi Enregistrer tant que la classe est incompatible', () => {
+    renderEditor()
+
+    fireEvent.change(screen.getByLabelText('classe'), { target: { value: '3ème M1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }))
+
+    expect(screen.getByRole('alert').textContent).toBe(CLASS_LEVEL_ERROR)
+    expect(mockedPut).not.toHaveBeenCalled()
   })
 })

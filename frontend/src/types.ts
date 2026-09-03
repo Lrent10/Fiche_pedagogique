@@ -29,6 +29,7 @@ export type SheetDetail = {
   title: string
   revision_number: number
   status: string
+  curriculum_level?: string
   identification: Record<string, string>
   planning: Record<string, string>
   segments: { id: number; instruction_id: number; instruction_code: string; text: string; planned_minutes: number }[]
@@ -45,6 +46,7 @@ export type SupportDetail = {
   title: string
   revision_number: number
   status: string
+  level?: string
   scope: 'SEQUENCE' | 'SA'
   sequence: { id: number; code: string; title: string } | null
   situation: { id: number; code: string; title: string } | null

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from . import models as m
 from .config import settings
+from .curriculum_level import CLASS_LEVEL_ERROR, class_label_matches_level
 from .database import get_db
 from .exporter import export_document
 from .schemas import (
@@ -36,6 +37,8 @@ from .services import (
     copy_library_to_sheet,
     copy_library_to_support,
     create_sheet_from_support,
+    curriculum_level_for_instruction_ids,
+    curriculum_level_for_revision,
     finalize_revision,
     new_support_revision,
     new_teacher_revision,
@@ -149,8 +152,11 @@ def create_sheet(payload: SheetCreate, db: Session = Depends(get_db)):
     instructions = db.scalars(select(m.InstructionGuide).where(m.InstructionGuide.id.in_(payload.instruction_ids))).all()
     if len(instructions) != len(set(payload.instruction_ids)):
         raise HTTPException(400, "Une ou plusieurs instructions sont introuvables.")
+    curriculum_level = curriculum_level_for_instruction_ids(db, payload.instruction_ids)
+    if not class_label_matches_level(payload.class_label, curriculum_level):
+        raise HTTPException(422, CLASS_LEVEL_ERROR)
     number = (db.scalar(select(func.count()).select_from(m.TeacherSessionSheet)) or 0) + 1
-    sheet = m.TeacherSessionSheet(code=f"FICHE-4E-{number:03d}", title=payload.title, level=payload.class_label)
+    sheet = m.TeacherSessionSheet(code=f"FICHE-4E-{number:03d}", title=payload.title, level=curriculum_level)
     db.add(sheet)
     db.flush()
     revision = m.TeacherSheetRevision(
@@ -212,6 +218,9 @@ def get_sheet_warnings(revision_id: int, db: Session = Depends(get_db)):
 def update_metadata(revision_id: int, payload: SheetMetadataUpdate, db: Session = Depends(get_db)):
     revision = db.get(m.TeacherSheetRevision, revision_id)
     require_draft(revision)
+    curriculum_level = curriculum_level_for_revision(db, revision)
+    if not class_label_matches_level(payload.identification.get("classe"), curriculum_level):
+        raise HTTPException(422, CLASS_LEVEL_ERROR)
     revision.identification_json = json.dumps(payload.identification, ensure_ascii=False)
     revision.planning_json = json.dumps(payload.planning, ensure_ascii=False)
     db.commit()

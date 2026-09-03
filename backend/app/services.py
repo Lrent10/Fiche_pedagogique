@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import models as m
+from .curriculum_level import CLASS_LEVEL_ERROR, CURRICULUM_LEVEL, class_label_matches_level
 
 
 def require_draft(revision) -> None:
@@ -15,6 +16,56 @@ def require_draft(revision) -> None:
         raise HTTPException(404, "Révision introuvable.")
     if revision.status != "DRAFT":
         raise HTTPException(409, "Une révision finalisée est immuable. Créez une nouvelle révision.")
+
+
+def curriculum_level_for_instruction_ids(db: Session, instruction_ids: list[int]) -> str:
+    if not instruction_ids:
+        return CURRICULUM_LEVEL
+    rows = db.execute(
+        select(m.ProgrammeVersion.level, m.GuideVersion.level)
+        .select_from(m.InstructionGuide)
+        .join(m.Sequence, m.Sequence.id == m.InstructionGuide.sequence_id)
+        .join(m.SituationApprentissage, m.SituationApprentissage.id == m.Sequence.situation_id)
+        .join(m.ProgrammeVersion, m.ProgrammeVersion.id == m.SituationApprentissage.programme_version_id)
+        .join(m.GuideVersion, m.GuideVersion.id == m.Sequence.guide_version_id)
+        .where(m.InstructionGuide.id.in_(instruction_ids))
+    ).all()
+    levels = {level for row in rows for level in row if level}
+    if len(levels) != 1:
+        raise HTTPException(409, "Les instructions sélectionnées ne définissent pas un niveau curriculaire unique.")
+    return levels.pop()
+
+
+def curriculum_level_for_revision(db: Session, revision: m.TeacherSheetRevision) -> str:
+    instruction_ids = list(
+        db.scalars(
+            select(m.SessionCurriculumSegment.instruction_id).where(
+                m.SessionCurriculumSegment.teacher_revision_id == revision.id
+            )
+        ).all()
+    )
+    if instruction_ids:
+        return curriculum_level_for_instruction_ids(db, instruction_ids)
+    sheet = db.get(m.TeacherSessionSheet, revision.sheet_id)
+    return sheet.level if sheet else CURRICULUM_LEVEL
+
+
+def support_curriculum_level(db: Session, support: m.LearnerSupport) -> str:
+    situation = None
+    guide_level = None
+    if support.sequence_id:
+        sequence = db.get(m.Sequence, support.sequence_id)
+        if sequence:
+            situation = db.get(m.SituationApprentissage, sequence.situation_id)
+            guide = db.get(m.GuideVersion, sequence.guide_version_id)
+            guide_level = guide.level if guide else None
+    elif support.situation_id:
+        situation = db.get(m.SituationApprentissage, support.situation_id)
+    programme = db.get(m.ProgrammeVersion, situation.programme_version_id) if situation else None
+    levels = {level for level in (programme.level if programme else None, guide_level) if level}
+    if len(levels) > 1:
+        raise HTTPException(409, "Le support ne définit pas un niveau curriculaire unique.")
+    return levels.pop() if levels else support.level
 
 
 def copy_library_to_sheet(db: Session, revision_id: int, version_id: int, adaptation_note: str = "") -> m.SheetResourceInstance:
@@ -142,11 +193,17 @@ def create_sheet_from_support(
             )
         ) if version_ids else []
 
+    support_level = support_curriculum_level(db, support)
+    curriculum_level = curriculum_level_for_instruction_ids(db, instruction_ids) if instruction_ids else support_level
+    if curriculum_level != support_level:
+        raise HTTPException(409, "Les instructions sélectionnées ne correspondent pas au niveau curriculaire du support.")
+    if not class_label_matches_level(class_label, curriculum_level):
+        raise HTTPException(422, CLASS_LEVEL_ERROR)
     number = (db.scalar(select(func.count()).select_from(m.TeacherSessionSheet)) or 0) + 1
     sheet = m.TeacherSessionSheet(
         code=f"FICHE-4E-{number:03d}",
         title=title or f"Séance - {support.title}",
-        level=class_label,
+        level=curriculum_level,
     )
     db.add(sheet)
     db.flush()
@@ -365,6 +422,7 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
         "title": sheet.title,
         "revision_number": revision.revision_number,
         "status": revision.status,
+        "curriculum_level": curriculum_level_for_revision(db, revision),
         "identification": json.loads(revision.identification_json),
         "planning": json.loads(revision.planning_json),
         "segments": [{"id": s.id, "instruction_id": i.id, "instruction_code": i.code, "text": i.text, "planned_minutes": s.planned_minutes} for s, i in segments],
@@ -398,6 +456,7 @@ def support_detail(db: Session, revision_id: int) -> dict:
         "title": support.title,
         "revision_number": revision.revision_number,
         "status": revision.status,
+        "level": support_curriculum_level(db, support),
         "scope": "SEQUENCE" if sequence else "SA",
         "sequence": None if not sequence else {"id": sequence.id, "code": sequence.code, "title": sequence.title},
         "situation": None if not situation else {"id": situation.id, "code": situation.code, "title": situation.title},
