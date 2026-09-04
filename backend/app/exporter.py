@@ -49,6 +49,14 @@ def pedagogical_label(block_type: str, title: str) -> str:
         "METHOD": "Méthode",
         "REMARK": "Remarque",
         "EXERCISE": "Exercice",
+        "FORMULA": "Formule",
+        "FIGURE": "Figure",
+        "EXPECTED_RESPONSE": "Résultat attendu",
+        "EXPECTED_RESULT": "Résultat attendu",
+        "EXPECTED_TRACE": "Trace attendue",
+        "SOLUTION": "Solution",
+        "CORRECTION": "Correction",
+        "TEACHER_NOTE": "Note enseignant",
     }.get(block_type, block_type.replace("_", " ").title())
 
 
@@ -121,7 +129,7 @@ def teacher_tex(detail: dict) -> str:
         (("Classe", field_value(identification, "classe")), ("Effectif", field_value(identification, "effectif"))),
         (("Nom du professeur", field_value(identification, "nom du professeur", "professeur")), ("Nombre de groupes", field_value(identification, "nombre de groupes", "groupes"))),
         (("SA", field_value(identification, "SA", "situation_apprentissage")), ("Titre SA", field_value(identification, "titre SA"))),
-        (("Durée curriculaire SA", field_value(identification, "durée curriculaire SA")), ("Séquence", field_value(identification, "séquence"))),
+        (("Durée curriculaire SA", field_value(identification, "durée curriculaire SA")), ("Séquence", re.sub(r"^SEQ(\d+)$", r"Séquence \1", field_value(identification, "séquence")))),
         (("Titre séquence", field_value(identification, "titre séquence")), ("Durée de la séance", field_value(identification, "durée de la séance", "durée"))),
         (("Numéro de séance", field_value(identification, "numéro de séance", "numéro séance")), ("Titre du cours", course_title)),
     ]
@@ -177,9 +185,15 @@ def teacher_tex(detail: dict) -> str:
     return "\n".join(parts)
 
 
+def learner_content(content: str) -> str:
+    """Remove the historical response-area suffix, preserving stored revisions."""
+    return re.sub(r"(?:\\par\s*)?(?:\\medskip\s*)?\\textbf\{Réponse\s*:\}\s*\\par\s*\\vspace\*?\{[\d.,]+\s*(?:cm|mm|in|pt)\}", "", content)
+
+
 def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
     sequence = detail.get("sequence") or {}
     situation = detail.get("situation") or {}
+    sequence_label = re.sub(r"^SEQ(\d+)$", r"Séquence \1", sequence.get("code", ""))
     parts = [rf"""\documentclass[10pt,a4paper]{{article}}
 \usepackage[utf8]{{inputenc}}
 \usepackage[T1]{{fontenc}}
@@ -190,6 +204,7 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
 \setlength{{\parskip}}{{2pt}}
 \setlength{{\columnsep}}{{0.65cm}}
 \setlength{{\columnseprule}}{{0.25pt}}
+\raggedcolumns
 \setlength{{\emergencystretch}}{{2em}}
 \pagestyle{{fancy}}\fancyhf{{}}
 \lhead{{\small Mathématiques - {escape_text(detail.get('level', '4e'))}}}
@@ -198,23 +213,26 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
 \renewcommand{{\headrulewidth}}{{0.3pt}}
 \renewcommand{{\footrulewidth}}{{0.3pt}}
 \newcommand{{\SequenceTitle}}[1]{{\par\medskip\hrule\smallskip\textbf{{\large #1}}\smallskip\hrule\medskip}}
-\newcommand{{\ActivityTitle}}[2]{{\par\medskip\textbf{{Activité #1 : #2}}\par\smallskip}}
-\newcommand{{\InstructionTitle}}[2]{{\par\smallskip\textbf{{Consigne #1#2}}\par}}
-\newcommand{{\PedagogicalBlock}}[3]{{\par\smallskip\textbf{{#1#2}}\par #3\par}}
+\newcommand{{\ActivityTitle}}[2]{{\par\medskip\textbf{{Activité #1 : #2}}\par\nobreak\smallskip}}
+\newcommand{{\InstructionTitle}}[2]{{\par\smallskip\textbf{{Consigne #1#2}}\par\nobreak}}
+\newcommand{{\PedagogicalBlock}}[3]{{\par\smallskip\textbf{{#1#2}}\par\nobreak #3\par}}
 \newcommand{{\Separator}}{{\par\smallskip\noindent\dotfill\par\smallskip}}
+% Keep ordinary cutouts intact; very long authored blocks remain breakable.
+\newcommand{{\PrintableBlock}}[1]{{\par\setbox0=\vbox{{\hsize=\columnwidth\linewidth=\columnwidth #1}}\ifdim\dimexpr\ht0+\dp0\relax<0.85\textheight\box0\else #1\fi\par}}
 \begin{{document}}
 \begin{{center}}\textbf{{\Large {escape_text(detail['title'])}}}\\
-\small {escape_text(situation.get('code', ''))} {escape_text(situation.get('title', ''))} - {escape_text(sequence.get('code', ''))} {escape_text(sequence.get('title', ''))}
+\small {escape_text(situation.get('code', ''))} {escape_text(situation.get('title', ''))} - {escape_text(sequence_label)} {escape_text(sequence.get('title', ''))}
 \end{{center}}
 \begin{{multicols}}{{2}}
 """]
-    teacher_only = {"EXPECTED_RESULT", "EXPECTED_TRACE", "SOLUTION", "CORRECTION", "TEACHER_NOTE"}
+    teacher_only = {"EXPECTED_RESPONSE", "EXPECTED_RESULT", "EXPECTED_TRACE", "SOLUTION", "CORRECTION", "TEACHER_NOTE", "RESPONSE_SPACE", "ANSWER_SPACE"}
     instruction_number = 0
     activity_number = 0
-    activity_types = {"STATEMENT", "ACTIVITY", "APPLICATION", "EXERCISE"}
     for resource in detail["resources"]:
-        visible_blocks = [block for block in resource["blocks"] if block["visible"] and not (target == "LEARNER_INITIAL" and block["block_type"] in teacher_only)]
-        show_activity_title = len(visible_blocks) > 1 or any(block["block_type"] in activity_types for block in visible_blocks) or bool(re.match(r"^\s*application\b", resource["title"], re.IGNORECASE))
+        visible_blocks = [block for block in resource["blocks"] if block["visible"] and block["block_type"] not in teacher_only]
+        if not visible_blocks:
+            continue
+        show_activity_title = len(visible_blocks) > 1
         if show_activity_title:
             activity_number += 1
             resource_title = natural_activity_title(resource["title"])
@@ -222,10 +240,11 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
         for block in resource["blocks"]:
             if not block["visible"]:
                 continue
-            if target == "LEARNER_INITIAL" and block["block_type"] in teacher_only:
+            if block["block_type"] in teacher_only:
                 continue
+            parts.append(r"\PrintableBlock{")
             title = escape_text(block["title"])
-            content = safe_latex(block["content_latex"])
+            content = safe_latex(learner_content(block["content_latex"]))
             block_type = block["block_type"]
             if block_type in {"INSTRUCTION", "CONSIGNE"} and re.match(r"^\s*application\b", block["title"], re.IGNORECASE):
                 clean = natural_title("Application", block["title"])
@@ -259,6 +278,7 @@ def support_tex(detail: dict, target: str = "LEARNER_INITIAL") -> str:
             else:
                 parts.append(rf"\par\smallskip\textbf{{{title}}}\par {content}\par")
             parts.append(r"\Separator")
+            parts.append("}")
     parts.append(r"\end{multicols}")
     parts.append(r"\end{document}")
     return "\n".join(parts)
@@ -320,12 +340,8 @@ def export_document(db: Session, family: str, revision_id: int, target: str | No
         if target not in {"LEARNER_INITIAL", "LEARNER_COMPLETED"}:
             raise ValueError("Cible incompatible avec un support apprenant.")
         detail = support_detail(db, revision_id)
-        for resource in detail["resources"]:
-            for block in resource["blocks"]:
-                if block.get("source_block_id"):
-                    variant = db.scalar(select(m.BlockVariant).where(m.BlockVariant.block_id == block["source_block_id"], m.BlockVariant.target == target))
-                    if variant:
-                        block["content_latex"] = variant.content_latex
+        # Both historical targets now render the saved learner copy. Source
+        # variants must never overwrite a teacher's local edits at export time.
         tex = support_tex(detail, target)
         suffix = "initiale" if target == "LEARNER_INITIAL" else "completee"
         file_name = f"fiche_apprenant_{suffix}_{detail['code']}_r{detail['revision_number']}.pdf"

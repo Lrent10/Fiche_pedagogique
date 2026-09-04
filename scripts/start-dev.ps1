@@ -17,7 +17,9 @@ if ($Occupied.Count -gt 0) {
 Push-Location '.\backend'
 try {
     & '..\.venv\Scripts\python.exe' -m alembic upgrade head
+    if ($LASTEXITCODE -ne 0) { throw 'La migration a échoué. Aucun serveur ne sera démarré.' }
     & '..\.venv\Scripts\python.exe' -m app.seed
+    if ($LASTEXITCODE -ne 0) { throw 'Le chargement du pilote a échoué. Aucun serveur ne sera démarré.' }
 }
 finally { Pop-Location }
 

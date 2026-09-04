@@ -67,6 +67,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/exports", StaticFiles(directory=settings.export_dir), name="exports")
+from .authoring import router as authoring_router
+app.include_router(authoring_router)
 
 
 @app.get("/api/health")
@@ -116,6 +118,7 @@ def instructions(sequence_id: int | None = None, db: Session = Depends(get_db)):
 
 @app.get("/api/resources")
 def resources(instruction_id: int | None = None, db: Session = Depends(get_db)):
+    from .authoring import resource_provenance
     query = select(m.PedagogicalResourceVersion, m.PedagogicalResource).join(m.PedagogicalResource).where(m.PedagogicalResourceVersion.status == "AVAILABLE")
     if instruction_id:
         query = query.join(m.ResourceInstructionMapping).where(m.ResourceInstructionMapping.instruction_id == instruction_id)
@@ -131,6 +134,7 @@ def resources(instruction_id: int | None = None, db: Session = Depends(get_db)):
                 "title": version.title,
                 "resource_type": resource.resource_type,
                 "provenance_kind": resource.provenance_kind,
+                "provenance": resource_provenance(db, version, resource),
                 "summary": version.summary,
                 "estimated_minutes": version.estimated_minutes,
                 "blocks": [{"id": block.id, "block_type": block.block_type, "title": block.title, "content_latex": block.content_latex, "position": block.position} for block in blocks],
@@ -221,6 +225,17 @@ def update_metadata(revision_id: int, payload: SheetMetadataUpdate, db: Session 
     curriculum_level = curriculum_level_for_revision(db, revision)
     if not class_label_matches_level(payload.identification.get("classe"), curriculum_level):
         raise HTTPException(422, CLASS_LEVEL_ERROR)
+    state = json.loads(revision.authoring_json or "{}")
+    if state:
+        for section, values, old in [("identification", payload.identification, json.loads(revision.identification_json)), ("planning", payload.planning, json.loads(revision.planning_json))]:
+            for key in values.keys() | old.keys():
+                if values.get(key) != old.get(key):
+                    path = section + "." + key
+                    previous = state["provenance"].get(path, {})
+                    if previous.get("origin") == "CURRICULUM_DERIVED" and path not in payload.override_fields:
+                        raise HTTPException(422, "Confirmez explicitement la personnalisation du champ curriculaire : " + key)
+                    state["provenance"][path] = {"origin": "USER_OVERRIDE" if previous.get("origin") in {"CURRICULUM_DERIVED", "USER_OVERRIDE"} else "MANUAL_USER_ENTRY", "sources": previous.get("sources", [])}
+        revision.authoring_json = json.dumps(state, ensure_ascii=False)
     revision.identification_json = json.dumps(payload.identification, ensure_ascii=False)
     revision.planning_json = json.dumps(payload.planning, ensure_ascii=False)
     db.commit()

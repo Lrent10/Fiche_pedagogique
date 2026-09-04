@@ -133,7 +133,8 @@ def test_doc_007_and_008_initial_masks_completed_content():
         }],
     }
     assert "SECRET_COMPLETED_789" not in support_tex(detail, "LEARNER_INITIAL")
-    assert "SECRET_COMPLETED_789" in support_tex(detail, "LEARNER_COMPLETED")
+    # V2-03: the historical completed target is a learner alias, never a correction.
+    assert "SECRET_COMPLETED_789" not in support_tex(detail, "LEARNER_COMPLETED")
 
 
 def test_doc_009_and_010_exports_keep_exact_revisions(client):

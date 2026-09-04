@@ -82,6 +82,7 @@ class PositionUpdate(BaseModel):
 class SheetMetadataUpdate(BaseModel):
     identification: dict = Field(default_factory=dict)
     planning: dict = Field(default_factory=dict)
+    override_fields: list[str] = Field(default_factory=list)
 
 
 class RenamePayload(BaseModel):

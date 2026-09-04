@@ -345,7 +345,7 @@ def new_teacher_revision(db: Session, revision_id: int) -> m.TeacherSheetRevisio
     if not source:
         raise HTTPException(404, "Révision introuvable.")
     number = (db.scalar(select(func.max(m.TeacherSheetRevision.revision_number)).where(m.TeacherSheetRevision.sheet_id == source.sheet_id)) or 0) + 1
-    target = m.TeacherSheetRevision(sheet_id=source.sheet_id, revision_number=number, identification_json=source.identification_json, planning_json=source.planning_json)
+    target = m.TeacherSheetRevision(sheet_id=source.sheet_id, revision_number=number, identification_json=source.identification_json, planning_json=source.planning_json, authoring_json=source.authoring_json)
     db.add(target)
     db.flush()
     segment_map = {}
@@ -355,11 +355,13 @@ def new_teacher_revision(db: Session, revision_id: int) -> m.TeacherSheetRevisio
         db.flush()
         segment_map[segment.id] = copied.id
     block_map = {}
+    resource_map = {}
     resources = db.scalars(select(m.SheetResourceInstance).where(m.SheetResourceInstance.teacher_revision_id == source.id).order_by(m.SheetResourceInstance.position)).all()
     for resource in resources:
         copied_resource = m.SheetResourceInstance(teacher_revision_id=target.id, origin=resource.origin, source_resource_version_id=resource.source_resource_version_id, title=resource.title, position=resource.position, adaptation_note=resource.adaptation_note)
         db.add(copied_resource)
         db.flush()
+        resource_map[resource.id] = copied_resource.id
         for block in db.scalars(select(m.SheetBlockInstance).where(m.SheetBlockInstance.resource_instance_id == resource.id).order_by(m.SheetBlockInstance.position)).all():
             copied_block = m.SheetBlockInstance(resource_instance_id=copied_resource.id, source_block_id=block.source_block_id, block_type=block.block_type, title=block.title, content_latex=block.content_latex, visible=block.visible, position=block.position)
             db.add(copied_block)
@@ -367,6 +369,10 @@ def new_teacher_revision(db: Session, revision_id: int) -> m.TeacherSheetRevisio
             block_map[block.id] = copied_block.id
     for flow in db.scalars(select(m.FlowItem).where(m.FlowItem.teacher_revision_id == source.id).order_by(m.FlowItem.position)).all():
         db.add(m.FlowItem(teacher_revision_id=target.id, block_instance_id=block_map.get(flow.block_instance_id), phase_code=flow.phase_code, teacher_action=flow.teacher_action, learner_action=flow.learner_action, strategy=flow.strategy, expected_result_latex=flow.expected_result_latex, duration_minutes=flow.duration_minutes, position=flow.position))
+    authoring = json.loads(target.authoring_json or "{}")
+    for selection in list(authoring.get("selections", {}).values()) + authoring.get("selection_history", []):
+        selection["instance_id"] = resource_map.get(selection["instance_id"], selection["instance_id"])
+    target.authoring_json = json.dumps(authoring, ensure_ascii=False)
     for support_use in db.scalars(select(m.SupportUse).where(m.SupportUse.teacher_revision_id == source.id)).all():
         db.add(m.SupportUse(
             support_revision_id=support_use.support_revision_id,
@@ -425,6 +431,7 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
         "curriculum_level": curriculum_level_for_revision(db, revision),
         "identification": json.loads(revision.identification_json),
         "planning": json.loads(revision.planning_json),
+        "authoring": json.loads(revision.authoring_json or "{}"),
         "segments": [{"id": s.id, "instruction_id": i.id, "instruction_code": i.code, "text": i.text, "planned_minutes": s.planned_minutes} for s, i in segments],
         "resources": resources,
         "flow": [{"id": f.id, "block_instance_id": f.block_instance_id, "phase_code": f.phase_code, "teacher_action": f.teacher_action, "learner_action": f.learner_action, "strategy": f.strategy, "expected_result_latex": f.expected_result_latex, "duration_minutes": f.duration_minutes, "position": f.position} for f in flows],

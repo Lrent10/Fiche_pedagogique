@@ -1,0 +1,207 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry,amsmath,amssymb,array,multicol,fancyhdr,graphicx,tikz}
+\geometry{top=1.25cm,bottom=1.25cm,left=1.2cm,right=1.2cm}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2pt}
+\setlength{\columnsep}{0.65cm}
+\setlength{\columnseprule}{0.25pt}
+\raggedcolumns
+\setlength{\emergencystretch}{2em}
+\pagestyle{fancy}\fancyhf{}
+\lhead{\small Mathématiques - 4e}
+\rhead{\small Atelier de mise en page}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+\newcommand{\SequenceTitle}[1]{\par\medskip\hrule\smallskip\textbf{\large #1}\smallskip\hrule\medskip}
+\newcommand{\ActivityTitle}[2]{\par\medskip\textbf{Activité #1 : #2}\par\nobreak\smallskip}
+\newcommand{\InstructionTitle}[2]{\par\smallskip\textbf{Consigne #1#2}\par\nobreak}
+\newcommand{\PedagogicalBlock}[3]{\par\smallskip\textbf{#1#2}\par\nobreak #3\par}
+\newcommand{\Separator}{\par\smallskip\noindent\dotfill\par\smallskip}
+% Keep ordinary cutouts intact; very long authored blocks remain breakable.
+\newcommand{\PrintableBlock}[1]{\par\setbox0=\vbox{\hsize=\columnwidth\linewidth=\columnwidth #1}\ifdim\dimexpr\ht0+\dp0\relax<0.85\textheight\box0\else #1\fi\par}
+\begin{document}
+\begin{center}\textbf{\Large Atelier de mise en page}\\
+\small SA1 Configurations du plan - Séquence 8 Calculs sur les expressions algébriques
+\end{center}
+\begin{multicols}{2}
+
+\ActivityTitle{1}{Découverte — parcelle de Fofo}
+\PrintableBlock{
+\par\smallskip\textbf{Situation de départ}\par Fofo dispose d'une parcelle rectangulaire dont les côtés sont partagés en longueurs $x$, $z$ d'une part et $y$, $b$ d'autre part. Exprimer son aire de deux façons.\par
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{1}{ :}Calcule l'aire du grand rectangle, puis la somme des aires des quatre rectangles. Compare les résultats et complète : $(x+z)(y+b)=\ldots$
+\Separator
+}
+\ActivityTitle{2}{Établir les produits remarquables}
+\PrintableBlock{
+\InstructionTitle{2}{ :}Développe et réduis $(a+b)^2$, $(a-b)^2$ et $(a+b)(a-b)$, puis formule les égalités obtenues.
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Propriété}{ :}{\emph{Pour tous nombres $a$ et $b$ : $(a+b)^2=a^2+2ab+b^2$ ; $(a-b)^2=a^2-2ab+b^2$ ; $(a+b)(a-b)=a^2-b^2$.}}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Application}{ :}{Développe : $A=(2x+1)^2$, $B=(3x-2)^2$, $C=(4x-3)(4x+3)$. Factorise : $D=x^2+6x+9$, $E=4x^2-9$, $F=4x^2-4x+1$.}
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{3}{ : Recherche guidée}Pour $x=2$ et $y=3$, calcule séparément $(x+y)^2$ puis $x^2+2xy+y^2$. Recommence avec $x=5$ et $y=-1$. Compare chaque paire de résultats et explique, en une phrase complète, ce que montrent ces vérifications numériques. Présente tous les calculs intermédiaires et contrôle le signe du double produit.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{4}{ : Développement raisonné}Développe et réduis les expressions $G=(3x+4)^2$, $H=(5-2x)^2$ et $I=(7x-1)(7x+1)$. Pour chaque expression, indique l'identité remarquable utilisée, identifie les deux termes, écris l'étape de substitution puis donne la forme réduite. Vérifie enfin un des résultats pour $x=2$.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{5}{ : Factorisation raisonnée}Factorise $J=x^2+10x+25$, $K=9x^2-16$ et $L=4x^2-12x+9$. Avant de calculer, repère les carrés et le double produit éventuel. Écris l'identité remarquable dans le sens utilisé, justifie ton choix puis vérifie chaque factorisation en redéveloppant le produit obtenu.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{6}{ : Choisir une stratégie}Sans effectuer immédiatement tous les calculs, indique pour chaque expression s'il est plus efficace de développer, de factoriser ou de conserver la forme donnée : $(x+8)^2$, $x^2-64$, $4x^2+12x+9$, $(2x-3)(2x+3)$. Justifie chaque choix, puis effectue les transformations demandées et compare les nombres d'opérations.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{7}{ : Problème de synthèse}Un jardin carré de côté $(x+3)$ mètres contient une allée carrée de côté $x$ mètres. Exprime l'aire restante sous une forme développée puis sous une forme factorisée. Interprète géométriquement chaque terme, calcule cette aire pour $x=7$ et rédige une conclusion avec l'unité correcte.
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Définition}{ : Identité remarquable}{\emph{Une identité remarquable est une égalité vraie pour toutes les valeurs admissibles des lettres. Elle permet de développer ou de factoriser rapidement certaines expressions algébriques.}}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Méthode}{ : Reconnaître puis transformer}{1. Repérer les carrés des deux termes. 2. Chercher le double produit $2ab$ et contrôler son signe. 3. Choisir l'identité correspondante. 4. Remplacer $a$ et $b$ sans oublier les parenthèses. 5. Réduire et vérifier le résultat en redéveloppant ou avec une valeur numérique simple.}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Remarque}{ : Attention au signe}{Dans $(a-b)^2$, le terme du milieu est $-2ab$, mais le dernier terme reste $+b^2$. Le carré d'un nombre négatif est positif.}
+\Separator
+}
+\PrintableBlock{
+\par\textbf{Schéma de la parcelle}\par\begin{center}\resizebox{\columnwidth}{!}{\begin{tikzpicture}[scale=0.75]\draw[thick] (0,0) rectangle (8,4);\draw (5,0)--(5,4);\draw (0,2.5)--(8,2.5);\node at (2.5,1.25) {$xy$};\node at (6.5,1.25) {$zy$};\node at (2.5,3.25) {$xb$};\node at (6.5,3.25) {$zb$};\draw[<->] (0,-0.4)--node[below] {$x$}(5,-0.4);\draw[<->] (5,-0.4)--node[below] {$z$}(8,-0.4);\end{tikzpicture}}\end{center}
+\Separator
+}
+\ActivityTitle{3}{Découverte — parcelle de Fofo}
+\PrintableBlock{
+\par\smallskip\textbf{Situation de départ}\par Fofo dispose d'une parcelle rectangulaire dont les côtés sont partagés en longueurs $x$, $z$ d'une part et $y$, $b$ d'autre part. Exprimer son aire de deux façons.\par
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{8}{ :}Calcule l'aire du grand rectangle, puis la somme des aires des quatre rectangles. Compare les résultats et complète : $(x+z)(y+b)=\ldots$
+\Separator
+}
+\ActivityTitle{4}{Établir les produits remarquables}
+\PrintableBlock{
+\InstructionTitle{9}{ :}Développe et réduis $(a+b)^2$, $(a-b)^2$ et $(a+b)(a-b)$, puis formule les égalités obtenues.
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Propriété}{ :}{\emph{Pour tous nombres $a$ et $b$ : $(a+b)^2=a^2+2ab+b^2$ ; $(a-b)^2=a^2-2ab+b^2$ ; $(a+b)(a-b)=a^2-b^2$.}}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Application}{ :}{Développe : $A=(2x+1)^2$, $B=(3x-2)^2$, $C=(4x-3)(4x+3)$. Factorise : $D=x^2+6x+9$, $E=4x^2-9$, $F=4x^2-4x+1$.}
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{10}{ : Recherche guidée}Pour $x=2$ et $y=3$, calcule séparément $(x+y)^2$ puis $x^2+2xy+y^2$. Recommence avec $x=5$ et $y=-1$. Compare chaque paire de résultats et explique, en une phrase complète, ce que montrent ces vérifications numériques. Présente tous les calculs intermédiaires et contrôle le signe du double produit.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{11}{ : Développement raisonné}Développe et réduis les expressions $G=(3x+4)^2$, $H=(5-2x)^2$ et $I=(7x-1)(7x+1)$. Pour chaque expression, indique l'identité remarquable utilisée, identifie les deux termes, écris l'étape de substitution puis donne la forme réduite. Vérifie enfin un des résultats pour $x=2$.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{12}{ : Factorisation raisonnée}Factorise $J=x^2+10x+25$, $K=9x^2-16$ et $L=4x^2-12x+9$. Avant de calculer, repère les carrés et le double produit éventuel. Écris l'identité remarquable dans le sens utilisé, justifie ton choix puis vérifie chaque factorisation en redéveloppant le produit obtenu.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{13}{ : Choisir une stratégie}Sans effectuer immédiatement tous les calculs, indique pour chaque expression s'il est plus efficace de développer, de factoriser ou de conserver la forme donnée : $(x+8)^2$, $x^2-64$, $4x^2+12x+9$, $(2x-3)(2x+3)$. Justifie chaque choix, puis effectue les transformations demandées et compare les nombres d'opérations.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{14}{ : Problème de synthèse}Un jardin carré de côté $(x+3)$ mètres contient une allée carrée de côté $x$ mètres. Exprime l'aire restante sous une forme développée puis sous une forme factorisée. Interprète géométriquement chaque terme, calcule cette aire pour $x=7$ et rédige une conclusion avec l'unité correcte.
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Définition}{ : Identité remarquable}{\emph{Une identité remarquable est une égalité vraie pour toutes les valeurs admissibles des lettres. Elle permet de développer ou de factoriser rapidement certaines expressions algébriques.}}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Méthode}{ : Reconnaître puis transformer}{1. Repérer les carrés des deux termes. 2. Chercher le double produit $2ab$ et contrôler son signe. 3. Choisir l'identité correspondante. 4. Remplacer $a$ et $b$ sans oublier les parenthèses. 5. Réduire et vérifier le résultat en redéveloppant ou avec une valeur numérique simple.}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Remarque}{ : Attention au signe}{Dans $(a-b)^2$, le terme du milieu est $-2ab$, mais le dernier terme reste $+b^2$. Le carré d'un nombre négatif est positif.}
+\Separator
+}
+\PrintableBlock{
+\par\textbf{Schéma de la parcelle}\par\begin{center}\resizebox{\columnwidth}{!}{\begin{tikzpicture}[scale=0.75]\draw[thick] (0,0) rectangle (8,4);\draw (5,0)--(5,4);\draw (0,2.5)--(8,2.5);\node at (2.5,1.25) {$xy$};\node at (6.5,1.25) {$zy$};\node at (2.5,3.25) {$xb$};\node at (6.5,3.25) {$zb$};\draw[<->] (0,-0.4)--node[below] {$x$}(5,-0.4);\draw[<->] (5,-0.4)--node[below] {$z$}(8,-0.4);\end{tikzpicture}}\end{center}
+\Separator
+}
+\ActivityTitle{5}{Découverte — parcelle de Fofo}
+\PrintableBlock{
+\par\smallskip\textbf{Situation de départ}\par Fofo dispose d'une parcelle rectangulaire dont les côtés sont partagés en longueurs $x$, $z$ d'une part et $y$, $b$ d'autre part. Exprimer son aire de deux façons.\par
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{15}{ :}Calcule l'aire du grand rectangle, puis la somme des aires des quatre rectangles. Compare les résultats et complète : $(x+z)(y+b)=\ldots$
+\Separator
+}
+\ActivityTitle{6}{Établir les produits remarquables}
+\PrintableBlock{
+\InstructionTitle{16}{ :}Développe et réduis $(a+b)^2$, $(a-b)^2$ et $(a+b)(a-b)$, puis formule les égalités obtenues.
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Propriété}{ :}{\emph{Pour tous nombres $a$ et $b$ : $(a+b)^2=a^2+2ab+b^2$ ; $(a-b)^2=a^2-2ab+b^2$ ; $(a+b)(a-b)=a^2-b^2$.}}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Application}{ :}{Développe : $A=(2x+1)^2$, $B=(3x-2)^2$, $C=(4x-3)(4x+3)$. Factorise : $D=x^2+6x+9$, $E=4x^2-9$, $F=4x^2-4x+1$.}
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{17}{ : Recherche guidée}Pour $x=2$ et $y=3$, calcule séparément $(x+y)^2$ puis $x^2+2xy+y^2$. Recommence avec $x=5$ et $y=-1$. Compare chaque paire de résultats et explique, en une phrase complète, ce que montrent ces vérifications numériques. Présente tous les calculs intermédiaires et contrôle le signe du double produit.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{18}{ : Développement raisonné}Développe et réduis les expressions $G=(3x+4)^2$, $H=(5-2x)^2$ et $I=(7x-1)(7x+1)$. Pour chaque expression, indique l'identité remarquable utilisée, identifie les deux termes, écris l'étape de substitution puis donne la forme réduite. Vérifie enfin un des résultats pour $x=2$.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{19}{ : Factorisation raisonnée}Factorise $J=x^2+10x+25$, $K=9x^2-16$ et $L=4x^2-12x+9$. Avant de calculer, repère les carrés et le double produit éventuel. Écris l'identité remarquable dans le sens utilisé, justifie ton choix puis vérifie chaque factorisation en redéveloppant le produit obtenu.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{20}{ : Choisir une stratégie}Sans effectuer immédiatement tous les calculs, indique pour chaque expression s'il est plus efficace de développer, de factoriser ou de conserver la forme donnée : $(x+8)^2$, $x^2-64$, $4x^2+12x+9$, $(2x-3)(2x+3)$. Justifie chaque choix, puis effectue les transformations demandées et compare les nombres d'opérations.
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{21}{ : Problème de synthèse}Un jardin carré de côté $(x+3)$ mètres contient une allée carrée de côté $x$ mètres. Exprime l'aire restante sous une forme développée puis sous une forme factorisée. Interprète géométriquement chaque terme, calcule cette aire pour $x=7$ et rédige une conclusion avec l'unité correcte.
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Définition}{ : Identité remarquable}{\emph{Une identité remarquable est une égalité vraie pour toutes les valeurs admissibles des lettres. Elle permet de développer ou de factoriser rapidement certaines expressions algébriques.}}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Méthode}{ : Reconnaître puis transformer}{1. Repérer les carrés des deux termes. 2. Chercher le double produit $2ab$ et contrôler son signe. 3. Choisir l'identité correspondante. 4. Remplacer $a$ et $b$ sans oublier les parenthèses. 5. Réduire et vérifier le résultat en redéveloppant ou avec une valeur numérique simple.}
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Remarque}{ : Attention au signe}{Dans $(a-b)^2$, le terme du milieu est $-2ab$, mais le dernier terme reste $+b^2$. Le carré d'un nombre négatif est positif.}
+\Separator
+}
+\PrintableBlock{
+\par\textbf{Schéma de la parcelle}\par\begin{center}\resizebox{\columnwidth}{!}{\begin{tikzpicture}[scale=0.75]\draw[thick] (0,0) rectangle (8,4);\draw (5,0)--(5,4);\draw (0,2.5)--(8,2.5);\node at (2.5,1.25) {$xy$};\node at (6.5,1.25) {$zy$};\node at (2.5,3.25) {$xb$};\node at (6.5,3.25) {$zb$};\draw[<->] (0,-0.4)--node[below] {$x$}(5,-0.4);\draw[<->] (5,-0.4)--node[below] {$z$}(8,-0.4);\end{tikzpicture}}\end{center}
+\Separator
+}
+\end{multicols}
+\end{document}

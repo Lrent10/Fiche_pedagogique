@@ -470,6 +470,8 @@ def seed_database(db: Session) -> bool:
     db.flush()
     db.add(m.ExecutedCurriculumSegment(teaching_session_id=teaching_session.id, session_curriculum_segment_id=executed_segment.id, status="DONE", actual_minutes=50, position=1))
     db.add(m.SupportUse(support_revision_id=support_revision.id, teaching_session_id=teaching_session.id, used_on=m.now().date().isoformat(), class_label="4e A", part_label="Application", notes="Donnée de démonstration."))
+    from .authoring_pilot import install_pilot
+    install_pilot(db)
     db.commit()
     return True
 
@@ -479,4 +481,7 @@ if __name__ == "__main__":
 
     with SessionLocal() as session:
         created = seed_database(session)
+        from .authoring_pilot import install_pilot
+        install_pilot(session)
+        session.commit()
         print("Seed créé." if created else "Seed déjà présent.")

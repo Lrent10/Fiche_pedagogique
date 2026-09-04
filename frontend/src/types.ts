@@ -14,6 +14,7 @@ export type Resource = {
   title: string
   resource_type: string
   provenance_kind: string
+  provenance?: { source_kind: string; source_ref: string; source_version: string; page_label?: string; adaptation?: boolean; validation_status?: string; author?: string }
   summary: string
   estimated_minutes: number
   blocks: Block[]
@@ -30,6 +31,7 @@ export type SheetDetail = {
   revision_number: number
   status: string
   curriculum_level?: string
+  authoring?: { mode?: string; scope?: { programme_id: number; scope: string; scope_id: number }; provenance?: Record<string, { origin: string; sources: unknown[] }>; selections?: Record<string, { resource_version_id: number }> }
   identification: Record<string, string>
   planning: Record<string, string>
   segments: { id: number; instruction_id: number; instruction_code: string; text: string; planned_minutes: number }[]

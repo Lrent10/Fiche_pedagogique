@@ -76,7 +76,13 @@ const instructions = [1, 2, 3, 4].map(id => ({
 const existingSheet = { sheet_id: 3, revision_id: 7, code: 'FICHE-TEST', title: 'Fiche existante', revision_number: 1, status: 'DRAFT' }
 
 function mockWorkspace() {
+  mockedPost.mockImplementation(async (path: string) => {
+    if (path === '/api/authoring/preview') return { identification: { classe: '4e' }, planning: {}, instructions, provenance: {}, durations: [], duration_conflict: false }
+    if (path === '/api/authoring/compose') return sheet({ title: 'Nouvelle séance' })
+    throw new Error(`Requête inattendue: ${path}`)
+  })
   mockedApi.mockImplementation(async (path: string) => {
+    if (path === '/api/authoring/curriculum') return [{ id: 1, level: '4e', title: 'Programme', situations: [{ id: 1, title: 'SA1', sequences: [{ id: 1, title: 'Séquence', instructions }] }] }]
     if (path === '/api/dashboard') return { draft_sheets: 1, finalized_sheets: 0, resources: 0, supports: 0, open_source_issues: 0 }
     if (path === '/api/instructions') return instructions
     if (path === '/api/resources') return []
@@ -108,18 +114,17 @@ describe('UX-BB-002 intention explicite de création', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Créer une fiche pédagogique/ }))
 
     expect(await screen.findByLabelText(/Titre de la séance/i)).toBeTruthy()
-    expect(mockedPost).not.toHaveBeenCalled()
+    expect(mockedPost.mock.calls.filter(([path]) => path === '/api/authoring/compose')).toHaveLength(0)
   })
 
   it('TEST-003 soumet une seule fois puis affiche SheetEditor', async () => {
-    mockedPost.mockResolvedValueOnce(sheet({ title: 'Nouvelle séance' }))
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /Créer une fiche pédagogique/ }))
     fireEvent.change(await screen.findByLabelText(/Titre de la séance/i), { target: { value: 'Nouvelle séance' } })
-    fireEvent.click(screen.getByRole('button', { name: /Commencer la conception/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Commencer la conception/ }))
 
-    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
-    expect(mockedPost).toHaveBeenCalledWith('/api/sheets', expect.objectContaining({ title: 'Nouvelle séance' }))
+    await waitFor(() => expect(mockedPost.mock.calls.filter(([path]) => path === '/api/authoring/compose')).toHaveLength(1))
+    expect(mockedPost).toHaveBeenCalledWith('/api/authoring/compose', expect.objectContaining({ title: 'Nouvelle séance' }))
     expect(await screen.findByRole('heading', { name: 'Nouvelle séance' })).toBeTruthy()
   })
 
@@ -148,7 +153,7 @@ describe('UX-BB-002 intention explicite de création', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '＋ Nouvelle fiche' }))
     expect(await screen.findByLabelText(/Titre de la séance/i)).toBeTruthy()
-    expect(mockedPost).not.toHaveBeenCalled()
+    expect(mockedPost.mock.calls.filter(([path]) => path === '/api/authoring/compose')).toHaveLength(0)
   })
 
   it('TEST-007 conserve la reprise d’une fiche depuis la liste', async () => {

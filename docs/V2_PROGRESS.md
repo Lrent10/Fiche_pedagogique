@@ -1,4 +1,29 @@
-# V2-01 / V2-02 / V2-02B progress
+# V2-03 progress — 2026-09-04
+
+Status: PASS_WITH_NON_BLOCKING_ITEMS for the local curriculum authoring pilot.
+
+- Authorized baseline branch: `fix/ux-bb-001-identification-navigation`.
+- Authorized baseline: `2ec0f27d75fc6d6e86d1caa079012afc9736f7f4`.
+- V2-02B already committed in ancestor `a1c6b67efc46e92b535477be918f9fdc2bbc77c6`; no recovery or branch change.
+- Gate: clean worktree, exact branch/HEAD, M01 unchanged, 0003 current/head, 49 backend / 28 frontend / build PASS, real startup 200/200.
+- Baseline migration: `0003_final_document_editor`; new current/head: `0004_curriculum_authoring`.
+- Delivered: scoped curriculum attributes, I/II snapshots, explicit overrides, reusable local profile, manual candidates, typed formulations, controlled automatic draft, teacher-to-learner copy and source classification.
+- Learner standard excludes expected responses and response areas; `LEARNER_COMPLETED` remains a compatibility alias with the same exclusion. This supersedes the historical completed-variant behavior below.
+- Existing snapshot edits survive export; finalized revisions remain immutable, new revisions remap selection copies.
+- Fresh-install duplicate-column defect corrected in additive migration guards; startup now stops on native migration/seed failure.
+- Final campaign: 77 backend / 42 frontend / build PASS; real Alembic empty-install and preservation-upgrade tests included.
+- Browser: manual and automatic scenarios finalized, approximately 90 s / 41 s; agent-operated, not independent teacher certification.
+- PDF QA: teacher 1 page, learner 1 page, compacted historical support 1 page, separate repeated-content multipage fixture 3 pages; LaTeX and visual inspection.
+- Documentation: seven `docs/audits/V2_03_*.md`, `README_TESTER_V2_2.md`, known limitations and visual evidence.
+- M01 SHA-256: `03F54F7C62A0E6F2F3BE154631EE542408BF5423B5D4FAD8B147CD85CE0E3B67`.
+- Limits: partial resource corpus, 56/60 h conflict preserved, no Première C ingestion, no authenticated inspection workflow, no mathematical certification.
+- No push, merge, tag or V2-04.
+
+The section below is the historical V2-02B record; its old test counts and export semantics are not the current V2-03 result.
+
+---
+
+# Historical V2-01 / V2-02 / V2-02B progress
 
 Status: V2-02B human UX and document finalization complete with non-blocking layout items.
 
@@ -18,7 +43,7 @@ Status: V2-02B human UX and document finalization complete with non-blocking lay
 - Support-first endpoint and UI: finalized support revision, explicit block selection, duration estimate, teacher-sheet creation.
 - `SupportUse` stores the exact support revision, selected source block IDs, part label and linked teacher revision.
 - Initial learner export masks teacher-only/solution blocks; completed export renders completed variants.
-- Alembic revision `0002_v2_document_workflow`.
+- Alembic revision `0003_final_document_editor` (following `0002_v2_document_workflow`).
 - Automated `DOC-001..010` and `WF-001..003` coverage.
 - Rendered PNG evidence under `docs/audits/visual/`.
 - Final whole-document editor with structure, live preview, block editing, visibility and ordering.
@@ -33,7 +58,7 @@ Status: V2-02B human UX and document finalization complete with non-blocking lay
 - Backend: 34 passed, 0 failed.
 - Frontend: 3 passed, 0 failed.
 - Production build: PASS.
-- Alembic upgrade to `0002_v2_document_workflow`: PASS.
+- Alembic migration head: `0003_final_document_editor`; local database confirmed at this head during baseline revalidation on 2026-09-04.
 - Backend and frontend startup probes: HTTP 200 / HTTP 200.
 - Three representative PDFs: LaTeX engine, A4 portrait, visual QA PASS.
 - Long support: initial 3 pages, completed 3 pages, 3 activities and 7 printed consignes.

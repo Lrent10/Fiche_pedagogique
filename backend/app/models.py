@@ -70,6 +70,21 @@ class ConnaissanceTechnique(Base):
     position: Mapped[int] = mapped_column(Integer)
 
 
+class CurriculumAttribute(Base):
+    __tablename__ = "curriculum_attributes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), unique=True)
+    programme_version_id: Mapped[int] = mapped_column(ForeignKey("programme_versions.id"))
+    scope: Mapped[str] = mapped_column(String(30))
+    scope_id: Mapped[int] = mapped_column(Integer)
+    field: Mapped[str] = mapped_column(String(100))
+    value: Mapped[str] = mapped_column(Text)
+    source_document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id"))
+    source_version: Mapped[str] = mapped_column(String(100))
+    page_label: Mapped[str] = mapped_column(String(50))
+    __table_args__ = (CheckConstraint("scope IN ('CLASS', 'SA', 'SEQUENCE', 'INSTRUCTION')", name="ck_attribute_scope"),)
+
+
 class InstructionGuide(Base):
     __tablename__ = "guide_instructions"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -156,6 +171,7 @@ class PedagogicalResourceVersion(Base):
     pedagogical_status: Mapped[str] = mapped_column(String(30), default="NOT_REVIEWED")
     source_completeness_status: Mapped[str] = mapped_column(String(30), default="NOT_REVIEWED")
     source_consistency_status: Mapped[str] = mapped_column(String(30), default="NOT_REVIEWED")
+    provenance_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     __table_args__ = (UniqueConstraint("resource_id", "version_number"),)
 
@@ -209,6 +225,7 @@ class TeacherSheetRevision(Base):
     status: Mapped[str] = mapped_column(String(30), default="DRAFT")
     identification_json: Mapped[str] = mapped_column(Text, default="{}")
     planning_json: Mapped[str] = mapped_column(Text, default="{}")
+    authoring_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     __table_args__ = (UniqueConstraint("sheet_id", "revision_number"),)
@@ -389,7 +406,7 @@ def protect_finalized_revisions(session: Session, _flush_context, _instances) ->
         revision_id = None
         if isinstance(obj, TeacherSheetRevision):
             history = inspect(obj).attrs.status.history
-            if history.deleted and history.deleted[0] == "FINALIZED":
+            if (history.deleted and history.deleted[0] == "FINALIZED") or (obj not in session.new and obj.status == "FINALIZED" and not history.added and (session.is_modified(obj) or obj in session.deleted)):
                 raise ValueError("Une révision enseignant finalisée est immuable.")
             continue
         if isinstance(obj, (SessionCurriculumSegment, SheetResourceInstance, FlowItem)):
@@ -399,7 +416,7 @@ def protect_finalized_revisions(session: Session, _flush_context, _instances) ->
             family, revision_id = "TEACHER", parent.teacher_revision_id if parent else None
         elif isinstance(obj, LearnerSupportRevision):
             history = inspect(obj).attrs.status.history
-            if history.deleted and history.deleted[0] == "FINALIZED":
+            if (history.deleted and history.deleted[0] == "FINALIZED") or (obj not in session.new and obj.status == "FINALIZED" and not history.added and (session.is_modified(obj) or obj in session.deleted)):
                 raise ValueError("Une révision apprenant finalisée est immuable.")
             continue
         elif isinstance(obj, SupportResourceInstance):

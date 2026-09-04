@@ -39,3 +39,12 @@ main { min-width: 0; }.topbar { height: 84px; padding: 0 35px; background: rgba(
 .support-local p{margin:0 0 10px;color:var(--muted);font-size:11px;line-height:1.45}.support-local label{display:grid;gap:5px;margin-top:9px;color:#52686d;font-size:10px;font-weight:700}.support-local select{border:1px solid #cddbd7;background:white;border-radius:7px;padding:9px;color:#263f46}.support-local textarea{min-height:105px}.support-local button.primary{display:block;text-align:center}
 .head-buttons{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.danger{border:1px solid #e1bcbc;background:#fff4f4;color:#923d3d;border-radius:8px;padding:10px 13px;font-weight:700;font-size:12px}
 .flow-editor{border:1px solid var(--line);border-radius:10px;margin-bottom:14px;overflow:hidden}.flow-editor .flow-row{border:0;border-radius:0;margin:0}.flow-metadata{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:0 14px 12px}.flow-metadata label,.support-first label{display:grid;gap:5px;color:var(--muted);font-size:10px;font-weight:700}.flow-metadata input,.support-first input{border:1px solid #cbd8d4;border-radius:7px;padding:8px}.expected-result{margin:0 14px 14px;padding:13px;border:1px solid #d7c790;border-radius:9px;background:#fffdf5}.expected-result .editor-label b{color:#765816}.block-controls{display:flex;align-items:center;gap:5px}.block-controls button{border:1px solid var(--line);background:white;border-radius:5px}.block-head small{display:block;color:var(--muted);font-size:8px;margin-top:3px}.select-block{font-size:10px;color:var(--primary);font-weight:700}.support-first{margin-top:20px;padding:17px;border:1px solid #b9d2d4;border-radius:10px;background:#f2f8f8}.support-first p{color:var(--muted);font-size:11px;line-height:1.5}.support-first label{max-width:180px;margin-bottom:10px}
+
+.authoring-create { display: grid; gap: 1.2rem; }
+.curriculum-autofill { background: #f3f7f4; border-left: 4px solid #27745b; padding: 1.2rem; border-radius: 8px; }
+.curriculum-autofill h4 { margin-top: 1rem; }
+.preserve-lines { white-space: pre-line; }
+.source-detail { margin: .6rem 0; padding: .5rem; background: #f1f4f8; font-size: .85rem; overflow-wrap: anywhere; }
+.instruction-choices { display: grid; gap: 1rem; }
+input[readonly] { background: #f0f5f1; color: #234b38; }
+.authoring-create fieldset { border: 1px solid #ccd5d0; border-radius: 8px; padding: 1rem; }

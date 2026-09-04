@@ -15,17 +15,17 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table("flow_items") as batch:
-        batch.add_column(sa.Column("expected_result_latex", sa.Text(), nullable=False, server_default=""))
+    # 0001 historically bootstraps from live metadata on an empty installation.
+    inspector = sa.inspect(op.get_bind())
+    if "expected_result_latex" not in {c["name"] for c in inspector.get_columns("flow_items")}:
+        op.add_column("flow_items", sa.Column("expected_result_latex", sa.Text(), nullable=False, server_default=""))
+    columns = {c["name"] for c in inspector.get_columns("support_uses")}
     with op.batch_alter_table("support_uses") as batch:
-        batch.add_column(sa.Column("teacher_revision_id", sa.Integer(), nullable=True))
-        batch.add_column(sa.Column("selected_block_ids_json", sa.Text(), nullable=False, server_default="[]"))
-        batch.create_foreign_key(
-            "fk_support_use_teacher_revision",
-            "teacher_sheet_revisions",
-            ["teacher_revision_id"],
-            ["id"],
-        )
+        if "teacher_revision_id" not in columns:
+            batch.add_column(sa.Column("teacher_revision_id", sa.Integer(), nullable=True))
+            batch.create_foreign_key("fk_support_use_teacher_revision", "teacher_sheet_revisions", ["teacher_revision_id"], ["id"])
+        if "selected_block_ids_json" not in columns:
+            batch.add_column(sa.Column("selected_block_ids_json", sa.Text(), nullable=False, server_default="[]"))
 
 
 def downgrade():

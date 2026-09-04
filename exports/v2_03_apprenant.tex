@@ -1,0 +1,57 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry,amsmath,amssymb,array,multicol,fancyhdr,graphicx,tikz}
+\geometry{top=1.25cm,bottom=1.25cm,left=1.2cm,right=1.2cm}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2pt}
+\setlength{\columnsep}{0.65cm}
+\setlength{\columnseprule}{0.25pt}
+\raggedcolumns
+\setlength{\emergencystretch}{2em}
+\pagestyle{fancy}\fancyhf{}
+\lhead{\small Mathématiques - 4e}
+\rhead{\small Produits remarquables — découverte et application}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+\newcommand{\SequenceTitle}[1]{\par\medskip\hrule\smallskip\textbf{\large #1}\smallskip\hrule\medskip}
+\newcommand{\ActivityTitle}[2]{\par\medskip\textbf{Activité #1 : #2}\par\nobreak\smallskip}
+\newcommand{\InstructionTitle}[2]{\par\smallskip\textbf{Consigne #1#2}\par\nobreak}
+\newcommand{\PedagogicalBlock}[3]{\par\smallskip\textbf{#1#2}\par\nobreak #3\par}
+\newcommand{\Separator}{\par\smallskip\noindent\dotfill\par\smallskip}
+% Keep ordinary cutouts intact; very long authored blocks remain breakable.
+\newcommand{\PrintableBlock}[1]{\par\setbox0=\vbox{\hsize=\columnwidth\linewidth=\columnwidth #1}\ifdim\dimexpr\ht0+\dp0\relax<0.85\textheight\box0\else #1\fi\par}
+\begin{document}
+\begin{center}\textbf{\Large Produits remarquables — découverte et application}\\
+\small SA1 Configurations du plan - Séquence 8 Calculs sur les expressions algébriques
+\end{center}
+\begin{multicols}{2}
+
+\PrintableBlock{
+\InstructionTitle{1}{ :}Développe et réduis $(a+b)^2$, $(a-b)^2$ et $(a+b)(a-b)$, puis formule les égalités obtenues.
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Propriété}{ :}{\emph{Pour tous nombres $a$ et $b$ : $(a+b)^2=a^2+2ab+b^2$ ; $(a-b)^2=a^2-2ab+b^2$ ; $(a+b)(a-b)=a^2-b^2$.}}
+\Separator
+}
+\PrintableBlock{
+\par\smallskip\textbf{Situation de départ}\par Fofo dispose d'une parcelle rectangulaire dont les côtés sont partagés en longueurs $x$, $z$ d'une part et $y$, $b$ d'autre part. Exprimer son aire de deux façons.\par
+\Separator
+}
+\PrintableBlock{
+\InstructionTitle{2}{ :}Calcule l'aire du grand rectangle, puis la somme des aires des quatre rectangles. Compare les résultats et complète : $(x+z)(y+b)=\ldots$
+\Separator
+}
+\PrintableBlock{
+\PedagogicalBlock{Application}{ :}{Développe : $A=(2x+1)^2$, $B=(3x-2)^2$, $C=(4x-3)(4x+3)$. Factorise : $D=x^2+6x+9$, $E=4x^2-9$, $F=4x^2-4x+1$.}
+\Separator
+}
+\PrintableBlock{
+\par\textbf{Schéma de la parcelle}\par\begin{center}\resizebox{\columnwidth}{!}{\begin{tikzpicture}[scale=0.75]\draw[thick] (0,0) rectangle (8,4);\draw (5,0)--(5,4);\draw (0,2.5)--(8,2.5);\node at (2.5,1.25) {$xy$};\node at (6.5,1.25) {$zy$};\node at (2.5,3.25) {$xb$};\node at (6.5,3.25) {$zb$};\draw[<->] (0,-0.4)--node[below] {$x$}(5,-0.4);\draw[<->] (5,-0.4)--node[below] {$z$}(8,-0.4);\end{tikzpicture}}\end{center}
+\Separator
+}
+\end{multicols}
+\end{document}
