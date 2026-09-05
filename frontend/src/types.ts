@@ -24,6 +24,7 @@ export type Resource = {
 
 export type SheetSummary = { sheet_id: number; revision_id: number; code: string; title: string; revision_number: number; status: string }
 export type SheetDetail = {
+  competency_selection?: CompetencyChoice[] | null
   id: number
   sheet_id: number
   planned_session?: { id: number; sequence_plan_id: number; number: number } | null
@@ -42,6 +43,7 @@ export type SheetDetail = {
 }
 
 export type SessionDurations = { slot_minutes: number; break_minutes: number; default_break_minutes: number; break_override: boolean; pedagogical_minutes?: number }
+export type CompetencyChoice = { competency_id: number; context_id: number; label: string; competency_type: string; selection_origin?: string; source_document: string; source_page?: string; authority_class: string; is_primary?: boolean; reason?: string }
 export type SessionPreparation = { durations: SessionDurations; planned_sequence_minutes: number | null; deferred_instruction_ids: number[]; reactivate_instruction_ids: number[]; class_context_id: number; class_label: string; school_year: string; session_number: number; teacher_actual_weekly_minutes: number | null }
 
 export type SupportSummary = { support_id: number; revision_id: number; code: string; title: string; revision_number: number; status: string }

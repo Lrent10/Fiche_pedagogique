@@ -41,7 +41,7 @@ def test_T13_migration_additive(tmp_path, existing):
                 before[table] = [tuple(r) for r in connection.execute(text(f'SELECT * FROM {table} ORDER BY id'))]
             connection.execute(text('CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)'))
             connection.execute(text("INSERT INTO alembic_version VALUES ('0004_curriculum_authoring')"))
-    result = subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], cwd=Path(__file__).resolve().parents[1], env={**os.environ, 'DATABASE_URL': url}, capture_output=True, text=True)
+    result = subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', '0005_planned_sessions'], cwd=Path(__file__).resolve().parents[1], env={**os.environ, 'DATABASE_URL': url}, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     with engine.connect() as connection:
         assert connection.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0005_planned_sessions'

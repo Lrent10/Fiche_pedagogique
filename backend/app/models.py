@@ -24,6 +24,76 @@ def now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+class Competency(Base):
+    __tablename__ = "competencies"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_code: Mapped[str] = mapped_column(String(20), unique=True)
+    competency_type: Mapped[str] = mapped_column(String(30))
+    canonical_label: Mapped[str] = mapped_column(Text)
+    canonical_number: Mapped[int] = mapped_column(Integer)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    __table_args__ = (CheckConstraint("competency_type IN ('DISCIPLINARY','TRANSDISCIPLINARY','TRANSVERSAL')", name="ck_competency_type"),)
+
+
+class CompetencyContext(Base):
+    __tablename__ = "competency_contexts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), unique=True)
+    competency_id: Mapped[int] = mapped_column(ForeignKey("competencies.id"), index=True)
+    curriculum_version: Mapped[str] = mapped_column(String(100))
+    class_level: Mapped[str] = mapped_column(String(30), index=True)
+    source_document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id"))
+    source_page: Mapped[str | None] = mapped_column(String(40))
+    source_raw_label: Mapped[str] = mapped_column(Text)
+    normalized_display_label: Mapped[str] = mapped_column(Text)
+    source_raw_text: Mapped[str] = mapped_column(Text)
+    realization_context: Mapped[str | None] = mapped_column(Text)
+    evaluation_context: Mapped[str | None] = mapped_column(Text)
+    criteria_json: Mapped[str | None] = mapped_column(Text)
+    capacities_json: Mapped[str | None] = mapped_column(Text)
+    skills_json: Mapped[str | None] = mapped_column(Text)
+    authority_class: Mapped[str] = mapped_column(String(40))
+    source_status: Mapped[str] = mapped_column(String(40))
+    source_issue_id: Mapped[int | None] = mapped_column(ForeignKey("source_issues.id"))
+
+
+class CompetencyApplicability(Base):
+    __tablename__ = "competency_applicabilities"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), unique=True)
+    competency_context_id: Mapped[int] = mapped_column(ForeignKey("competency_contexts.id"), index=True)
+    class_level: Mapped[str] = mapped_column(String(30))
+    programme_version_id: Mapped[int | None] = mapped_column(ForeignKey("programme_versions.id"), index=True)
+    situation_id: Mapped[int | None] = mapped_column(ForeignKey("learning_situations.id"), index=True)
+    sequence_id: Mapped[int | None] = mapped_column(ForeignKey("sequences.id"), index=True)
+    instruction_id: Mapped[int | None] = mapped_column(ForeignKey("guide_instructions.id"), index=True)
+    applicability_type: Mapped[str] = mapped_column(String(40))
+    source_document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id"))
+    source_version: Mapped[str] = mapped_column(String(100))
+    source_page: Mapped[str | None] = mapped_column(String(40))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    __table_args__ = (CheckConstraint("applicability_type IN ('REQUIRED','RECOMMENDED','EXAMPLE_SELECTION','LOCAL_SELECTION','CONTEXTUAL_CANDIDATE')", name="ck_competency_applicability"),)
+
+
+class TeacherSheetCompetencySelection(Base):
+    __tablename__ = "teacher_sheet_competency_selections"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    teacher_revision_id: Mapped[int] = mapped_column(ForeignKey("teacher_sheet_revisions.id"), index=True)
+    competency_id: Mapped[int] = mapped_column(ForeignKey("competencies.id"))
+    competency_context_id: Mapped[int | None] = mapped_column(ForeignKey("competency_contexts.id"))
+    applicability_id: Mapped[int | None] = mapped_column(ForeignKey("competency_applicabilities.id"))
+    selection_origin: Mapped[str] = mapped_column(String(40))
+    selected_order: Mapped[int] = mapped_column(Integer)
+    is_primary: Mapped[bool | None] = mapped_column(Boolean)
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    __table_args__ = (
+        UniqueConstraint("teacher_revision_id", "competency_id"),
+        UniqueConstraint("teacher_revision_id", "selected_order"),
+        CheckConstraint("selected_order >= 0", name="ck_competency_order"),
+        CheckConstraint("selection_origin IN ('OFFICIAL_CONTEXT','GUIDE_EXAMPLE','INSPECTOR_VALIDATED','AUTO_SELECTED','TEACHER_SELECTED')", name="ck_competency_origin"),
+    )
+
+
 class ProgrammeVersion(Base):
     __tablename__ = "programme_versions"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -440,6 +510,9 @@ def _revision_is_finalized(session: Session, family: str, revision_id: int | Non
 @event.listens_for(Session, "before_flush")
 def protect_finalized_revisions(session: Session, _flush_context, _instances) -> None:
     for obj in set(session.new).union(session.dirty).union(session.deleted):
+        if isinstance(obj, CompetencyContext) and obj in session.dirty:
+            if any(inspect(obj).attrs[field].history.has_changes() for field in ("source_raw_label", "source_raw_text")):
+                raise ValueError("Le texte brut de source est immuable ; créer une nouvelle version.")
         family = None
         revision_id = None
         if isinstance(obj, TeacherSheetRevision):
@@ -447,8 +520,12 @@ def protect_finalized_revisions(session: Session, _flush_context, _instances) ->
             if (history.deleted and history.deleted[0] == "FINALIZED") or (obj not in session.new and obj.status == "FINALIZED" and not history.added and (session.is_modified(obj) or obj in session.deleted)):
                 raise ValueError("Une révision enseignant finalisée est immuable.")
             continue
-        if isinstance(obj, (SessionCurriculumSegment, SheetResourceInstance, FlowItem)):
+        if isinstance(obj, (SessionCurriculumSegment, SheetResourceInstance, FlowItem, TeacherSheetCompetencySelection)):
             family, revision_id = "TEACHER", obj.teacher_revision_id
+            if isinstance(obj, TeacherSheetCompetencySelection):
+                previous = inspect(obj).attrs.teacher_revision_id.history.deleted
+                if previous and _revision_is_finalized(session, "TEACHER", previous[0]):
+                    raise ValueError("La sélection d'une révision finalisée est immuable.")
         elif isinstance(obj, SheetBlockInstance):
             parent = session.get(SheetResourceInstance, obj.resource_instance_id)
             family, revision_id = "TEACHER", parent.teacher_revision_id if parent else None

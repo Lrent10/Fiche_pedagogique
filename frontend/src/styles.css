@@ -60,3 +60,8 @@ input[readonly] { background: #f0f5f1; color: #234b38; }
 .session-panel button, .authoring-create > button { border: 1px solid #b5cbc5; border-radius: 7px; padding: 9px 13px; background: white; color: var(--primary); }
 .session-panel fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 14px 0; }
 @media(max-width:720px) { .coverage-row { grid-template-columns: 1fr; } }
+/* Revision-owned competency selection. */
+.competency-panel fieldset { margin: 1rem 0; border: 1px solid #d4dfd9; border-radius: 8px; padding: 1rem; }
+.competency-option { display: flex; align-items: flex-start; gap: .75rem; margin: .8rem 0; }
+.competency-option input { width: auto; margin-top: .3rem; }
+.competency-option small { display: block; color: #53695f; margin-top: .3rem; }

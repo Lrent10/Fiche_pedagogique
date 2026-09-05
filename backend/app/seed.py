@@ -67,7 +67,10 @@ def add_resource(
 
 
 def seed_database(db: Session) -> bool:
+    from .competencies import install_catalog
     if db.scalar(select(m.ProgrammeVersion.id).limit(1)):
+        install_catalog(db)
+        db.commit()
         return False
 
     programme = m.ProgrammeVersion(
@@ -472,6 +475,7 @@ def seed_database(db: Session) -> bool:
     db.add(m.SupportUse(support_revision_id=support_revision.id, teaching_session_id=teaching_session.id, used_on=m.now().date().isoformat(), class_label="4e A", part_label="Application", notes="Donnée de démonstration."))
     from .authoring_pilot import install_pilot
     install_pilot(db)
+    install_catalog(db)
     db.commit()
     return True
 

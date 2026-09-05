@@ -1,4 +1,6 @@
 import { PlannedSessionCreate, SessionPanel, ContextProgress } from './Sessions'
+import { Competencies, competencyFields } from './Competencies'
+import type { CompetencyChoice } from './types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, post, put } from './api'
 import { LatexPreview } from './LatexPreview'
@@ -152,6 +154,7 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
   const [planning, setPlanning] = useState(sheet.planning)
   const [identificationDirty, setIdentificationDirty] = useState(false)
   const [planningDirty, setPlanningDirty] = useState(false)
+  const [competencyChoices, setCompetencyChoices] = useState<CompetencyChoice[] | null>(null)
   const [savingMetadata, setSavingMetadata] = useState(false)
   const [metadataError, setMetadataError] = useState('')
   const metadataSaveInFlight = useRef<Promise<SheetDetail> | null>(null)
@@ -168,6 +171,7 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
     setPlanning(sheet.planning)
     setIdentificationDirty(false)
     setPlanningDirty(false)
+    setCompetencyChoices(null)
     setMetadataError('')
   }, [sheet.id])
   async function addResource(id: number) { const updated = await post<SheetDetail>(`/api/sheets/${sheet.id}/resources/library`, { resource_version_id: id }); setSheet(updated); notify('Activité ajoutée à la fiche.') }
@@ -175,11 +179,22 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
   async function persistMetadata(showSuccess = false) {
     if (!draft) return sheet
     if (classLevelError) throw new Error(classLevelError)
-    if (!identificationDirty && !planningDirty) return sheet
+    if (!identificationDirty && !planningDirty && competencyChoices === null) return sheet
     if (metadataSaveInFlight.current) return metadataSaveInFlight.current
     setSavingMetadata(true)
     setMetadataError('')
-    const request = put<SheetDetail>(`/api/sheets/${sheet.id}/metadata`, { identification, planning, ...(overrideFields.length ? { override_fields: overrideFields } : {}) })
+    const request = (async () => {
+      let current = sheet
+      const nextPlanning = { ...planning }
+      if (competencyChoices !== null) {
+        current = await put<SheetDetail>(`/api/competencies/sheets/${sheet.id}`, { selections: competencyChoices.map(row => ({ competency_id: row.competency_id, context_id: row.context_id, is_primary: !!row.is_primary })) })
+        for (const field of competencyFields) nextPlanning[field] = current.planning[field]
+        setSheet(current)
+        setPlanning(nextPlanning)
+        setCompetencyChoices(null)
+      }
+      return identificationDirty || planningDirty ? put<SheetDetail>(`/api/sheets/${sheet.id}/metadata`, { identification, planning: nextPlanning, ...(overrideFields.length ? { override_fields: overrideFields } : {}) }) : current
+    })()
     metadataSaveInFlight.current = request
     try {
       const updated = await request
@@ -203,7 +218,7 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
   async function navigateToStep(target: number) {
     if (target === step || metadataSaveInFlight.current) return
     if (draft && step === 0 && classLevelError) return
-    const leavesDirtyMetadata = (step === 0 && identificationDirty) || (step === 5 && planningDirty)
+    const leavesDirtyMetadata = (step === 0 && identificationDirty) || (step === 5 && (planningDirty || competencyChoices !== null))
     if (leavesDirtyMetadata) {
       try { await persistMetadata() }
       catch { return }
@@ -225,7 +240,7 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
   return <>
     {confirmPlannedFinalization && <dialog ref={plannedConfirmation} onCancel={() => setConfirmPlannedFinalization(false)}><h3>Finaliser cette révision ?</h3><p>Elle deviendra non modifiable. La couverture restera inchangée jusqu’à la saisie des résultats réels après le cours.</p>{metadataError && <p role="alert">{metadataError}</p>}<button onClick={completeFinalization}>Confirmer la finalisation</button><button onClick={() => setConfirmPlannedFinalization(false)}>Continuer la relecture</button></dialog>}
     <button className="back" onClick={close}>← Retour à mes fiches</button>
-    <div className="editor-head"><div><div className="meta-line"><Status value={sheet.status} /><span>{sheet.code} · Révision {sheet.revision_number}</span></div><h2>{sheet.title}</h2></div><div className="head-buttons"><button className="outline" onClick={duplicate}>Dupliquer</button>{draft && <button className="outline" onClick={rename}>Renommer</button>}{draft && !sheet.planned_session && <button className="danger" onClick={remove}>Supprimer</button>}{draft ? <button className="outline" disabled={savingMetadata || (!identificationDirty && !planningDirty)} onClick={saveMetadata}>{savingMetadata ? 'Enregistrement…' : 'Enregistrer'}</button> : <button className="primary" onClick={revise}>Nouvelle révision</button>}</div></div>
+    <div className="editor-head"><div><div className="meta-line"><Status value={sheet.status} /><span>{sheet.code} · Révision {sheet.revision_number}</span></div><h2>{sheet.title}</h2></div><div className="head-buttons"><button className="outline" onClick={duplicate}>Dupliquer</button>{draft && <button className="outline" onClick={rename}>Renommer</button>}{draft && !sheet.planned_session && <button className="danger" onClick={remove}>Supprimer</button>}{draft ? <button className="outline" disabled={savingMetadata || (!identificationDirty && !planningDirty && competencyChoices === null)} onClick={saveMetadata}>{savingMetadata ? 'Enregistrement…' : 'Enregistrer'}</button> : <button className="primary" onClick={revise}>Nouvelle révision</button>}</div></div>
     <SessionPanel key={sheet.id} sheet={sheet} beforeEdit={() => persistMetadata()} onChange={updated => { setSheet(updated); setIdentification(updated.identification); setPlanning(updated.planning) }} />
     {metadataError && <div className="inline-error" role="alert">⚠ {metadataError}</div>}
     <div className="stepper" aria-label="Étapes de conception">{steps.map((label, index) => <button key={label} disabled={savingMetadata} className={`${index === step ? 'current' : ''} ${index < step ? 'done' : ''}`} onClick={() => void navigateToStep(index)}><span>{index < step ? '✓' : index + 1}</span><small>{label}</small></button>)}</div>
@@ -236,7 +251,7 @@ export function SheetEditor({ sheet, setSheet, resources, notify, refresh, close
       {step === 2 && !sheet.authoring?.scope && <div><SectionTitle number="03" title="Choisir les activités et consignes" subtitle="Comparez les propositions sourcées et la démonstration clairement étiquetée." /><div className="resource-carousel">{resources.filter(r => r.mappings.some(m => sheet.segments.some(s => s.instruction_id === m.instruction_id))).map(resource => <div className="compare-wrap" key={resource.id}><ResourceCard resource={resource} action={draft ? () => addResource(resource.id) : undefined} /><button className={compareIds.includes(resource.id) ? 'compare selected' : 'compare'} onClick={() => setCompareIds(old => old.includes(resource.id) ? old.filter(id => id !== resource.id) : old.length < 3 ? [...old, resource.id] : old)}>□ {compareIds.includes(resource.id) ? 'Sélectionnée' : 'Comparer'}</button></div>)}</div>{compareIds.length >= 2 && <Comparison resources={resources.filter(r => compareIds.includes(r.id))} />}</div>}
       {step === 3 && <div><SectionTitle number="04" title="Adapter les contenus en LaTeX" subtitle="Les copies de la bibliothèque sont modifiables sans altérer leur source." />{blocks.map(block => <LatexEditor key={block.id} block={block} disabled={!draft} onSave={value => updateBlock(block.id, { content_latex: value })} />)}{draft && <div className="local-box"><h3>Ajouter un contenu original local</h3><input value={localTitle} onChange={e => setLocalTitle(e.target.value)} /><textarea value={localLatex} onChange={e => setLocalLatex(e.target.value)} /><LatexPreview content={localLatex} /><button className="outline" onClick={addLocal}>＋ Ajouter à la fiche</button></div>}</div>}
       {step === 4 && <div><SectionTitle number="05" title="Organiser le déroulement" subtitle="Réordonnez les blocs, précisez les stratégies et saisissez manuellement les résultats attendus." />{sheet.flow.map((flow, index) => { const block = blocks.find(b => b.id === flow.block_instance_id); const needsResult = ['INSTRUCTION', 'CONSIGNE', 'APPLICATION', 'EXERCISE'].includes(block?.block_type || ''); return <article className="flow-editor" key={flow.id}><div className="flow-row"><span className="drag">⋮⋮</span><span className="flow-index">{index + 1}</span><div><b>{block?.title || 'Bloc'}</b><LatexPreview content={block?.content_latex || ''} compact /></div><span>{flow.duration_minutes} min</span>{draft && <div className="move"><button onClick={() => move(flow.block_instance_id, -1)}>↑</button><button onClick={() => move(flow.block_instance_id, 1)}>↓</button></div>}</div><div className="flow-metadata"><label>Stratégie<input disabled={!draft} defaultValue={flow.strategy} onBlur={e => updateFlow(flow.id, { strategy: e.target.value })} /></label><label>Durée (min)<input type="number" min="0" disabled={!draft} defaultValue={flow.duration_minutes} onBlur={e => updateFlow(flow.id, { duration_minutes: Number(e.target.value) })} /></label></div>{needsResult && <ExpectedResultEditor value={flow.expected_result_latex} disabled={!draft} onSave={value => updateFlow(flow.id, { expected_result_latex: value })} />}</article> })}</div>}
-      {step === 5 && <div><SectionTitle number="06" title="Éléments de planification" subtitle="Vérifiez la cohérence avant l’aperçu." /><div className="form-grid">{Object.entries(planning).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft || savingMetadata} readOnly={fieldLocked('planning', key)} value={value} onChange={e => { setPlanning({ ...planning, [key]: e.target.value }); setPlanningDirty(true); setMetadataError('') }} />{draft && fieldLocked('planning', key) && <button type="button" className="link" onClick={() => unlock('planning', key)}>Personnaliser</button>}</label>)}</div><div className="summary-strip"><span><b>{sheet.segments.length}</b> instructions</span><span><b>{sheet.resources.length}</b> activités</span><span><b>{sheet.flow.reduce((n, f) => n + f.duration_minutes, 0)}</b> minutes planifiées</span></div></div>}
+      {step === 5 && <div><SectionTitle number="06" title="Éléments de planification" subtitle="Vérifiez la cohérence avant l’aperçu." />{sheet.competency_selection != null && <Competencies value={competencyChoices ?? sheet.competency_selection} onChange={setCompetencyChoices} disabled={!draft || savingMetadata} />}<div className="form-grid">{Object.entries(planning).filter(([key]) => sheet.competency_selection == null || !competencyFields.includes(key)).map(([key, value]) => <label key={key}>{key.replaceAll('_', ' ')}<input disabled={!draft || savingMetadata} readOnly={fieldLocked('planning', key)} value={value} onChange={e => { setPlanning({ ...planning, [key]: e.target.value }); setPlanningDirty(true); setMetadataError('') }} />{draft && fieldLocked('planning', key) && <button type="button" className="link" onClick={() => unlock('planning', key)}>Personnaliser</button>}</label>)}</div><div className="summary-strip"><span><b>{sheet.segments.length}</b> instructions</span><span><b>{sheet.resources.length}</b> activités</span><span><b>{sheet.flow.reduce((n, f) => n + f.duration_minutes, 0)}</b> minutes planifiées</span></div></div>}
       {step === 6 && <div><SectionTitle number="07" title="Aperçu & édition finale" subtitle="Relisez ce qui sera imprimé, sélectionnez un bloc et corrigez les derniers détails." /><FinalPreparation sheet={sheet} draft={draft} onUpdate={updateBlock} onMove={move} onEditIdentification={() => setStep(0)} onEditPlanning={() => setStep(5)} /><div className="final-buttons"><button className="outline" onClick={exportPdf}>Aperçu impression (PDF)</button><LearnerFromSheet sheet={sheet} /></div></div>}
       {step === 7 && <div className="final-box"><span className="final-icon">✓</span><h2>{draft ? 'Votre fiche est prête à être finalisée' : 'Cette révision est finalisée'}</h2><p>{draft ? 'La finalisation fige cette révision. Vous pourrez ensuite créer une nouvelle révision pour continuer à l’adapter.' : 'Elle ne peut plus être modifiée. Son PDF reste reproductible depuis ce contenu figé.'}</p><FinalChecklist sheet={sheet} /><Warnings revisionId={sheet.id} /><div className="final-buttons">{draft && <button className="primary" onClick={finalize}>Finaliser la révision</button>}<button className="outline" onClick={exportPdf}>Générer le PDF enseignant</button>{!draft && <button className="outline" hidden={!!sheet.planned_session} onClick={recordExecution}>Marquer comme effectuée</button>}</div></div>}
       <div className="editor-nav"><button className="outline" disabled={step === 0 || savingMetadata} onClick={() => void navigateToStep(step - 1)}>← Précédent</button><span>{savingMetadata ? 'Enregistrement en cours…' : `Étape ${step + 1} sur ${steps.length}`}</span><button className="primary" disabled={step === steps.length - 1 || savingMetadata} onClick={() => void navigateToStep(step + 1)}>Suivant →</button></div>

@@ -153,7 +153,7 @@ def teacher_tex(detail: dict) -> str:
     planning_fields = [
         ("1. Contenus de formation", "contenus de formation"),
         ("2.a Compétences disciplinaires", "compétences disciplinaires"),
-        ("2.b Compétence transdisciplinaire", "compétence transdisciplinaire"),
+        ("2.b Compétence(s) transdisciplinaire(s)" if detail.get("competency_selection") is not None else "2.b Compétence transdisciplinaire", "compétence transdisciplinaire"),
         ("2.c Compétences transversales", "compétences transversales"),
         ("3. Connaissances et techniques", "connaissances et techniques"),
         ("4. Stratégie objet d'apprentissage", "stratégie objet d'apprentissage"),

@@ -71,6 +71,8 @@ from .authoring import router as authoring_router
 app.include_router(authoring_router)
 from .sessions import router as sessions_router, historical_progress
 app.include_router(sessions_router)
+from .competencies import router as competencies_router
+app.include_router(competencies_router)
 
 
 @app.get("/api/health")
@@ -206,6 +208,8 @@ def create_sheet(payload: SheetCreate, db: Session = Depends(get_db)):
     instruction_by_id = {row.id: row for row in instructions}
     for position, instruction_id in enumerate(payload.instruction_ids, 1):
         db.add(m.SessionCurriculumSegment(teacher_revision_id=revision.id, instruction_id=instruction_id, position=position, planned_minutes=per_segment))
+    from .competencies import initialize_selection
+    initialize_selection(db, revision)
     db.commit()
     return sheet_detail(db, revision.id)
 
@@ -228,6 +232,11 @@ def update_metadata(revision_id: int, payload: SheetMetadataUpdate, db: Session 
     if not class_label_matches_level(payload.identification.get("classe"), curriculum_level):
         raise HTTPException(422, CLASS_LEVEL_ERROR)
     state = json.loads(revision.authoring_json or "{}")
+    from .competencies import selection_enabled, planning_view, FIELDS
+    if selection_enabled(revision):
+        persisted = planning_view(db, revision)
+        if any(payload.planning.get(field, "") != persisted.get(field, "") for field in FIELDS.values()):
+            raise HTTPException(422, "Utilisez la sélection de compétences pour modifier ces rubriques.")
     if state.get("session_preparation"):
         old_identification = json.loads(revision.identification_json)
         for key in ["classe", "année scolaire", "numéro de séance", "durée de la séance"]:
@@ -378,6 +387,7 @@ def delete_draft_sheet(sheet_id: int, db: Session = Depends(get_db)):
             db.query(m.SheetBlockInstance).filter(m.SheetBlockInstance.id.in_(block_ids)).delete(synchronize_session=False)
         if resource_ids:
             db.query(m.SheetResourceInstance).filter(m.SheetResourceInstance.id.in_(resource_ids)).delete(synchronize_session=False)
+        db.query(m.TeacherSheetCompetencySelection).filter(m.TeacherSheetCompetencySelection.teacher_revision_id == revision.id).delete(synchronize_session=False)
         db.query(m.SessionCurriculumSegment).filter(m.SessionCurriculumSegment.teacher_revision_id == revision.id).delete(synchronize_session=False)
         db.delete(revision)
     db.delete(sheet)

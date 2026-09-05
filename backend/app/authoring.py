@@ -80,6 +80,8 @@ def resolve_scope(db, scope):
     programme = db.get(m.ProgrammeVersion, scope.programme_id)
     if not programme:
         raise HTTPException(404, "Programme introuvable.")
+    if programme.level != "4e" or programme.status != "ACTIVE":
+        raise HTTPException(422, "Le parcours actif reste limité au programme de 4e.")
     situations = list(db.scalars(select(m.SituationApprentissage).where(m.SituationApprentissage.programme_version_id == programme.id).order_by(m.SituationApprentissage.position)))
     sequences = list(db.scalars(select(m.Sequence).where(m.Sequence.situation_id.in_([s.id for s in situations])).order_by(m.Sequence.position)))
     instructions = list(db.scalars(select(m.InstructionGuide).where(m.InstructionGuide.sequence_id.in_([s.id for s in sequences])).order_by(m.InstructionGuide.position, m.InstructionGuide.id)))
@@ -154,6 +156,12 @@ def autofill(db, scope, selected_ids=None):
     if len(situations) == 1 and durations and len({d["hours"] for d in durations}) == 1:
         identification["durée curriculaire SA"] = f'{durations[0]["hours"]:g} h'
         provenance["identification.durée curriculaire SA"] = {"origin": "CURRICULUM_DERIVED", "sources": durations}
+    from .competencies import suggest, FIELDS
+    suggestions = suggest(db, instruction_ids=[i.id for i in instructions])
+    for kind, field in FIELDS.items():
+        matching = [r for r in suggestions if r["competency_type"] == kind]
+        planning[field] = "\n".join(r["label"] for r in matching)
+        provenance["planning." + field] = {"origin": "AUTO_SELECTED", "sources": [{**r, "source_kind": r["authority_class"], "source_ref": r["source_document"], "page_label": r["source_page"], "adaptation": True} for r in matching]}
     return {"identification": identification, "planning": planning, "provenance": provenance, "attributes": attributes, "durations": durations, "duration_conflict": len({d["hours"] for d in durations}) > 1, "instructions": [{"id": i.id, "text": i.text, "code": i.code, "sources": occurrence(db, "InstructionGuide", i.id)} for i in instructions]}
 
 
@@ -325,6 +333,8 @@ def compose_sheet(payload: Compose, db: Session, *, commit=True):
             else:
                 select_resource(db, revision, instruction["id"], candidate, "AUTO_SELECTED")
                 chosen[candidate["id"]] = json.loads(revision.authoring_json)["selections"][str(instruction["id"])]
+    from .competencies import initialize_selection
+    initialize_selection(db, revision)
     if commit:
         db.commit()
     else:

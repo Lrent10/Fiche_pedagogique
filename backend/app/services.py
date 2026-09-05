@@ -349,6 +349,8 @@ def new_teacher_revision(db: Session, revision_id: int) -> m.TeacherSheetRevisio
     db.add(target)
     db.flush()
     segment_map = {}
+    for selection in db.scalars(select(m.TeacherSheetCompetencySelection).where(m.TeacherSheetCompetencySelection.teacher_revision_id == source.id)):
+        db.add(m.TeacherSheetCompetencySelection(teacher_revision_id=target.id, competency_id=selection.competency_id, competency_context_id=selection.competency_context_id, applicability_id=selection.applicability_id, selection_origin=selection.selection_origin, selected_order=selection.selected_order, is_primary=selection.is_primary, snapshot_json=selection.snapshot_json))
     for segment in db.scalars(select(m.SessionCurriculumSegment).where(m.SessionCurriculumSegment.teacher_revision_id == source.id)).all():
         copied = m.SessionCurriculumSegment(teacher_revision_id=target.id, instruction_id=segment.instruction_id, position=segment.position, planned_minutes=segment.planned_minutes)
         db.add(copied)
@@ -422,6 +424,7 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
     flows = db.scalars(select(m.FlowItem).where(m.FlowItem.teacher_revision_id == revision.id).order_by(m.FlowItem.position)).all()
     support_use = db.scalar(select(m.SupportUse).where(m.SupportUse.teacher_revision_id == revision.id))
     planned = db.scalar(select(m.PlannedSession).where(m.PlannedSession.sheet_id == sheet.id))
+    from .competencies import planning_view, selected, selection_enabled
     return {
         "id": revision.id,
         "sheet_id": sheet.id,
@@ -432,7 +435,8 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
         "status": revision.status,
         "curriculum_level": curriculum_level_for_revision(db, revision),
         "identification": json.loads(revision.identification_json),
-        "planning": json.loads(revision.planning_json),
+        "planning": planning_view(db, revision),
+        "competency_selection": selected(db, revision.id) if selection_enabled(revision) else None,
         "authoring": json.loads(revision.authoring_json or "{}"),
         "segments": [{"id": s.id, "instruction_id": i.id, "instruction_code": i.code, "text": i.text, "planned_minutes": s.planned_minutes} for s, i in segments],
         "resources": resources,

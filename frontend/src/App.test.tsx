@@ -166,6 +166,51 @@ describe('UX-BB-002 intention explicite de création', () => {
   })
 })
 
+describe('P2 compétences et sauvegarde avant navigation', () => {
+  const selected = { competency_id: 1, context_id: 10, label: 'Travailler en coopération', competency_type: 'TRANSVERSAL', source_document: 'Guide 4e', source_page: '74', authority_class: 'OFFICIAL_GUIDE', selection_origin: 'AUTO_SELECTED' }
+  beforeEach(() => { vi.clearAllMocks(); mockedApi.mockResolvedValue([selected]) })
+  afterEach(cleanup)
+
+  it('P2-T09 retire et sauvegarde avant Suivant, bloque le double clic', async () => {
+    const initial = sheet({ competency_selection: [selected] })
+    renderEditor(initial)
+    fireEvent.click(screen.getByRole('button', { name: /6 Planification/ }))
+    expect(await screen.findByText(/Suggestion automatique/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('checkbox'))
+    const pending = deferred<SheetDetail>()
+    mockedPut.mockReturnValue(pending.promise)
+    fireEvent.click(screen.getByRole('button', { name: 'Suivant →' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Suivant →' }))
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(mockedPut).toHaveBeenCalledWith('/api/competencies/sheets/7', { selections: [] })
+    expect(screen.getByText('Compétences proposées pour cette séance')).toBeTruthy()
+    await act(async () => pending.resolve({ ...initial, competency_selection: [] }))
+    expect(await screen.findByText('Aperçu & édition finale', { selector: 'h3' })).toBeTruthy()
+  })
+
+  it('P2-T09 reste sur Planification après échec et permet la reprise', async () => {
+    renderEditor(sheet({ competency_selection: [selected] }))
+    fireEvent.click(screen.getByRole('button', { name: /6 Planification/ }))
+    await screen.findByText(/Suggestion automatique/)
+    fireEvent.click(screen.getByRole('checkbox'))
+    mockedPut.mockRejectedValue(new Error('Sauvegarde indisponible'))
+    fireEvent.click(screen.getByRole('button', { name: 'Suivant →' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('Sauvegarde indisponible')
+    expect(screen.getByText('Compétences proposées pour cette séance')).toBeTruthy()
+  })
+
+  it('P2-T12/T13 ajoute plusieurs CTD et accepte une sélection vide', async () => {
+    const rows = [1, 2].map(id => ({ ...selected, competency_id: id, context_id: id, label: `Compétence ${id}`, competency_type: 'TRANSDISCIPLINARY' }))
+    mockedApi.mockResolvedValue(rows)
+    renderEditor(sheet({ competency_selection: [] }))
+    fireEvent.click(screen.getByRole('button', { name: /6 Planification/ }))
+    await screen.findByText('Compétence 1')
+    fireEvent.click(screen.getByLabelText(/Compétence 1/))
+    fireEvent.click(screen.getByLabelText(/Compétence 2/))
+    expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(2)
+  })
+})
+
 describe('contrat de persistance du wizard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
