@@ -39,7 +39,7 @@ def test_migration_to_0004(tmp_path, existing):
             connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"))
             connection.execute(text("INSERT INTO alembic_version VALUES ('0003_final_document_editor')"))
     env = {**os.environ, "DATABASE_URL": url}
-    result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True)
+    result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "0004_curriculum_authoring"], cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0004_curriculum_authoring"

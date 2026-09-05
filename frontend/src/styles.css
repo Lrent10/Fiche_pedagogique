@@ -48,3 +48,15 @@ main { min-width: 0; }.topbar { height: 84px; padding: 0 35px; background: rgba(
 .instruction-choices { display: grid; gap: 1rem; }
 input[readonly] { background: #f0f5f1; color: #234b38; }
 .authoring-create fieldset { border: 1px solid #ccd5d0; border-radius: 8px; padding: 1rem; }
+
+.session-panel { background: #f0f7f6; border: 1px solid #c8dbd6; border-radius: 12px; padding: 20px; margin: 16px 0; }
+.session-panel dialog { width: min(780px, 90vw); max-height: 85vh; overflow: auto; border: 1px solid #9bb9b0; border-radius: 12px; padding: 24px; }
+.session-panel dialog::backdrop { background: #152e3066; }
+.session-panel button, .authoring-create > button { margin: 6px 8px 6px 0; }
+
+.coverage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 14px; margin: 10px 0; border: 1px solid var(--line); border-radius: 9px; background: white; }
+.coverage-row > span { font-size: 12px; white-space: nowrap; color: var(--muted); }
+.coverage-row .latex-preview { margin: 8px 0; font-size: 13px; }
+.session-panel button, .authoring-create > button { border: 1px solid #b5cbc5; border-radius: 7px; padding: 9px 13px; background: white; color: var(--primary); }
+.session-panel fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 14px 0; }
+@media(max-width:720px) { .coverage-row { grid-template-columns: 1fr; } }

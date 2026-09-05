@@ -421,9 +421,11 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
         resources.append({"id": resource.id, "origin": resource.origin, "source_resource_version_id": resource.source_resource_version_id, "title": resource.title, "adaptation_note": resource.adaptation_note, "position": resource.position, "blocks": [{"id": b.id, "block_type": b.block_type, "title": b.title, "content_latex": b.content_latex, "visible": b.visible, "position": b.position} for b in blocks]})
     flows = db.scalars(select(m.FlowItem).where(m.FlowItem.teacher_revision_id == revision.id).order_by(m.FlowItem.position)).all()
     support_use = db.scalar(select(m.SupportUse).where(m.SupportUse.teacher_revision_id == revision.id))
+    planned = db.scalar(select(m.PlannedSession).where(m.PlannedSession.sheet_id == sheet.id))
     return {
         "id": revision.id,
         "sheet_id": sheet.id,
+        "planned_session": None if not planned else {"id": planned.id, "sequence_plan_id": planned.sequence_plan_id, "number": planned.session_number_within_sequence},
         "code": sheet.code,
         "title": sheet.title,
         "revision_number": revision.revision_number,
@@ -479,8 +481,11 @@ def sheet_warnings(db: Session, revision_id: int) -> list[dict]:
         or detail["identification"].get("durée")
         or "0"
     )
-    digits = "".join(char for char in duration_text if char.isdigit())
-    session_minutes = int(digits) if digits else 0
+    prepared = detail["authoring"].get("session_preparation")
+    # Free-form historical durations are never interpreted as a gross slot.
+    import re
+    match = re.fullmatch(r"\s*(\d+)\s*(?:min(?:utes)?)?\s*", duration_text)
+    session_minutes = prepared["durations"]["pedagogical_minutes"] if prepared else int(match[1]) if match else 0
     flow_total = sum(item["duration_minutes"] for item in detail["flow"])
     if session_minutes and flow_total > session_minutes:
         warnings.append({"code": "WARNING_DURATION_EXCEEDED", "message": f"Le déroulement totalise {flow_total} min pour une séance de {session_minutes} min."})

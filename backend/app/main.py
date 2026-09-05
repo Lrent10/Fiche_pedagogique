@@ -69,6 +69,8 @@ app.add_middleware(
 app.mount("/exports", StaticFiles(directory=settings.export_dir), name="exports")
 from .authoring import router as authoring_router
 app.include_router(authoring_router)
+from .sessions import router as sessions_router, historical_progress
+app.include_router(sessions_router)
 
 
 @app.get("/api/health")
@@ -226,6 +228,11 @@ def update_metadata(revision_id: int, payload: SheetMetadataUpdate, db: Session 
     if not class_label_matches_level(payload.identification.get("classe"), curriculum_level):
         raise HTTPException(422, CLASS_LEVEL_ERROR)
     state = json.loads(revision.authoring_json or "{}")
+    if state.get("session_preparation"):
+        old_identification = json.loads(revision.identification_json)
+        for key in ["classe", "année scolaire", "numéro de séance", "durée de la séance"]:
+            if payload.identification.get(key) != old_identification.get(key):
+                raise HTTPException(422, "Utilisez les réglages de la séance pour modifier : " + key)
     if state:
         for section, values, old in [("identification", payload.identification, json.loads(revision.identification_json)), ("planning", payload.planning, json.loads(revision.planning_json))]:
             for key in values.keys() | old.keys():
@@ -326,6 +333,12 @@ def duplicate_sheet(revision_id: int, db: Session = Depends(get_db)):
     db.flush()
     copied_revision.sheet_id = copied_sheet.id
     copied_revision.revision_number = 1
+    state = json.loads(copied_revision.authoring_json or "{}")
+    if state.pop("session_preparation", None):
+        copied_revision.authoring_json = json.dumps(state, ensure_ascii=False)
+        identification = json.loads(copied_revision.identification_json)
+        identification["numéro de séance"] = ""
+        copied_revision.identification_json = json.dumps(identification, ensure_ascii=False)
     db.commit()
     return sheet_detail(db, copied_revision.id)
 
@@ -349,6 +362,8 @@ def delete_draft_sheet(sheet_id: int, db: Session = Depends(get_db)):
     sheet = db.get(m.TeacherSessionSheet, sheet_id)
     if not sheet:
         raise HTTPException(404, "Fiche introuvable.")
+    if db.scalar(select(m.PlannedSession.id).where(m.PlannedSession.sheet_id == sheet_id)):
+        raise HTTPException(409, "Cette fiche appartient à une séance numérotée. Adaptez son brouillon ; sa suppression n’est pas disponible.")
     revisions = db.scalars(select(m.TeacherSheetRevision).where(m.TeacherSheetRevision.sheet_id == sheet_id)).all()
     if any(revision.status != "DRAFT" for revision in revisions):
         raise HTTPException(409, "Une fiche possédant une révision finalisée ne peut pas être supprimée.")
@@ -515,6 +530,8 @@ def record_teaching_session(payload: TeachingSessionCreate, db: Session = Depend
     revision = db.get(m.TeacherSheetRevision, payload.teacher_revision_id)
     if not revision or revision.status != "FINALIZED":
         raise HTTPException(409, "Seule une fiche finalisée peut être marquée comme déroulée.")
+    if db.scalar(select(m.PlannedSession.id).where(m.PlannedSession.sheet_id == revision.sheet_id)):
+        raise HTTPException(422, "Renseignez les résultats réels instruction par instruction dans cette séance.")
     session = m.TeachingSession(teacher_revision_id=revision.id, taught_on=payload.taught_on, class_label=payload.class_label, notes=payload.notes)
     db.add(session)
     db.flush()
@@ -539,14 +556,7 @@ def record_support_use(payload: SupportUseCreate, db: Session = Depends(get_db))
 
 @app.get("/api/progress")
 def progress(db: Session = Depends(get_db)):
-    rows = db.execute(
-        select(m.InstructionGuide, func.count(m.ExecutedCurriculumSegment.id), func.coalesce(func.sum(m.ExecutedCurriculumSegment.actual_minutes), 0))
-        .outerjoin(m.SessionCurriculumSegment, m.SessionCurriculumSegment.instruction_id == m.InstructionGuide.id)
-        .outerjoin(m.ExecutedCurriculumSegment, m.ExecutedCurriculumSegment.session_curriculum_segment_id == m.SessionCurriculumSegment.id)
-        .group_by(m.InstructionGuide.id)
-        .order_by(m.InstructionGuide.position)
-    ).all()
-    instruction_rows = [{"instruction_id": instruction.id, "code": instruction.code, "text": instruction.text, "executions": count, "actual_minutes": minutes, "status": "DONE" if count else "NOT_STARTED"} for instruction, count, minutes in rows]
+    instruction_rows = historical_progress(db)
     allocations = db.execute(select(m.CurriculumTimeAllocation, m.SourceDocument).join(m.SourceDocument).order_by(m.CurriculumTimeAllocation.hours)).all()
     values = sorted({allocation.hours for allocation, _ in allocations})
     normative = {

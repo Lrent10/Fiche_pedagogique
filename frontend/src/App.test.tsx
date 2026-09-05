@@ -315,3 +315,19 @@ describe('contrat de persistance du wizard', () => {
     expect(mockedPut).not.toHaveBeenCalled()
   })
 })
+
+
+it('T19 finalisation contextualisée exige une confirmation explicite', async () => {
+  mockedApi.mockResolvedValue([])
+  HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  const initial = sheet({ planned_session: { id: 1, number: 1, sequence_plan_id: 1 } })
+  mockedPost.mockResolvedValueOnce({ ...initial, status: 'FINALIZED' })
+  renderEditor(initial)
+  fireEvent.click(screen.getByRole('button', { name: '8 Finalisation' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Finaliser la révision' }))
+  expect(mockedPost).not.toHaveBeenCalled()
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmer la finalisation' }))
+  await waitFor(() => expect(mockedPost).toHaveBeenCalledWith('/api/sheets/7/finalize'))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})

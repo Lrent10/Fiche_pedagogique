@@ -115,6 +115,13 @@ def labelled(label: str, value: object) -> str:
 
 def teacher_tex(detail: dict) -> str:
     identification = detail["identification"]
+    if detail.get("authoring", {}).get("session_preparation") and not identification.get("durée curriculaire SA"):
+        allocations = detail["authoring"].get("durations", [])
+        if allocations:
+            value = " / ".join(f"{hours:g} h" for hours in sorted({d["hours"] for d in allocations}))
+            if detail["authoring"].get("duration_conflict"):
+                value += " (conflit de sources conservé)"
+            identification = {**identification, "durée curriculaire SA": value}
     planning = detail["planning"]
     course_title = field_value(identification, "titre du cours") or detail["title"]
     sheet_number = field_value(identification, "numéro fiche pédagogique")
@@ -133,6 +140,11 @@ def teacher_tex(detail: dict) -> str:
         (("Titre séquence", field_value(identification, "titre séquence")), ("Durée de la séance", field_value(identification, "durée de la séance", "durée"))),
         (("Numéro de séance", field_value(identification, "numéro de séance", "numéro séance")), ("Titre du cours", course_title)),
     ]
+    preparation = detail.get("authoring", {}).get("session_preparation")
+    if preparation:
+        durations = preparation["durations"]
+        identity_rows.append((("Créneau brut", f"{durations['slot_minutes']} min"), ("Pause locale", f"{durations['break_minutes']} min")))
+        identity_rows.append((("Durée pédagogique de séance", f"{durations['pedagogical_minutes']} min"), ("Durée prévue de séquence", "" if preparation["planned_sequence_minutes"] is None else f"{preparation['planned_sequence_minutes']} min")))
     parts.append(r"\small\begin{tabularx}{\linewidth}{@{}X X@{}}")
     for left, right in identity_rows:
         parts.append(f"{labelled(*left)} & {labelled(*right)} " + r"\\")

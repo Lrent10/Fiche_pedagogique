@@ -57,5 +57,6 @@ def test_e2e_001_complete_vertical_slice(client):
     assert progress_payload["normative_allocation"]["remaining_hours"] is None
     progress = progress_payload["instructions"]
     progress_row = next(item for item in progress if item["code"] == "SEQ8-INS6")
-    assert progress_row["status"] == "DONE"
+    assert progress_row["status"] == "UNCONTEXTUALIZED"
+    assert progress_row["raw_results"][0]["status"] == "DONE"
     assert progress_row["actual_minutes"] == 67

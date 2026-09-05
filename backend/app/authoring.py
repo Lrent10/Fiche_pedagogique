@@ -276,6 +276,10 @@ def select_resource(db, revision, instruction_id, candidate, origin):
 
 @router.post("/compose", status_code=201)
 def compose(payload: Compose, db: Session = Depends(get_db)):
+    return compose_sheet(payload, db)
+
+
+def compose_sheet(payload: Compose, db: Session, *, commit=True):
     if payload.scope == "CLASS":
         raise HTTPException(422, "Choisissez une SA, une séquence ou une instruction pour composer une fiche.")
     filled = autofill(db, payload, payload.instruction_ids)
@@ -321,7 +325,10 @@ def compose(payload: Compose, db: Session = Depends(get_db)):
             else:
                 select_resource(db, revision, instruction["id"], candidate, "AUTO_SELECTED")
                 chosen[candidate["id"]] = json.loads(revision.authoring_json)["selections"][str(instruction["id"])]
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return sheet_detail(db, revision.id)
 
 

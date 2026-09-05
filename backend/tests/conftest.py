@@ -6,8 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-TEST_DB = Path(tempfile.gettempdir()) / "fiche_pedagogique_mvp_tests.db"
+TEST_DB = Path(tempfile.mkdtemp(prefix="fichemaths_tests_")) / "tests.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
+os.environ["EXPORT_DIR"] = str(TEST_DB.parent / "exports")
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -28,4 +29,3 @@ def fresh_database():
 def client():
     with TestClient(app) as test_client:
         yield test_client
-

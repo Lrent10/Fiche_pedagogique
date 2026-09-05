@@ -295,10 +295,48 @@ class ActivityPhase(Base):
     position: Mapped[int] = mapped_column(Integer)
 
 
+class ClassContext(Base):
+    __tablename__ = "class_contexts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_level: Mapped[str] = mapped_column(String(30))
+    class_label: Mapped[str] = mapped_column(String(80))
+    school_year: Mapped[str] = mapped_column(String(9))
+    teacher_actual_weekly_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    __table_args__ = (
+        UniqueConstraint("class_level", "class_label", "school_year"),
+        CheckConstraint("teacher_actual_weekly_minutes IS NULL OR teacher_actual_weekly_minutes > 0", name="ck_context_weekly_minutes"),
+    )
+
+
+class SequencePlan(Base):
+    __tablename__ = "sequence_plans"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_context_id: Mapped[int] = mapped_column(ForeignKey("class_contexts.id"))
+    sequence_id: Mapped[int] = mapped_column(ForeignKey("sequences.id"))
+    planned_sequence_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    __table_args__ = (
+        UniqueConstraint("class_context_id", "sequence_id"),
+        CheckConstraint("planned_sequence_minutes IS NULL OR planned_sequence_minutes > 0", name="ck_sequence_minutes"),
+    )
+
+
+class PlannedSession(Base):
+    __tablename__ = "planned_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sequence_plan_id: Mapped[int] = mapped_column(ForeignKey("sequence_plans.id"))
+    session_number_within_sequence: Mapped[int] = mapped_column(Integer)
+    sheet_id: Mapped[int] = mapped_column(ForeignKey("teacher_session_sheets.id"), unique=True)
+    __table_args__ = (
+        UniqueConstraint("sequence_plan_id", "session_number_within_sequence"),
+        CheckConstraint("session_number_within_sequence >= 1", name="ck_session_number"),
+    )
+
+
 class TeachingSession(Base):
     __tablename__ = "teaching_sessions"
     id: Mapped[int] = mapped_column(primary_key=True)
     teacher_revision_id: Mapped[int] = mapped_column(ForeignKey("teacher_sheet_revisions.id"))
+    planned_session_id: Mapped[int | None] = mapped_column(ForeignKey("planned_sessions.id"), nullable=True, index=True)
     taught_on: Mapped[str] = mapped_column(String(10))
     class_label: Mapped[str] = mapped_column(String(80))
     notes: Mapped[str] = mapped_column(Text, default="")
