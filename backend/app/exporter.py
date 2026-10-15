@@ -15,12 +15,9 @@ from sqlalchemy.orm import Session
 from . import models as m
 from .config import settings
 from .services import sheet_detail, support_detail
+from .latex_safety import ensure_safe_latex
 
 
-FORBIDDEN_LATEX = re.compile(
-    r"\\(write18|write|input|include(?!graphics)|openout|read|usepackage|documentclass|begin\s*\{document\}|end\s*\{document\}|scantokens|immediate)",
-    re.IGNORECASE,
-)
 USER_DOCUMENT_MODE = True
 
 
@@ -78,9 +75,12 @@ def escape_text(value: object) -> str:
 
 
 def safe_latex(value: str) -> str:
-    if FORBIDDEN_LATEX.search(value):
-        raise ValueError("Commande LaTeX interdite dans le contenu utilisateur.")
-    return value
+    return ensure_safe_latex(value)
+
+
+def snapshot_content(snapshot: dict) -> str:
+    content = str(snapshot.get("content", ""))
+    return escape_text(content) if snapshot.get("content_format") == "TEXT" else safe_latex(content)
 
 
 def document_preamble(title: str) -> str:
@@ -193,6 +193,20 @@ def teacher_tex(detail: dict) -> str:
         expected = flow.get("expected_result_latex", "")
         if expected:
             parts.append(r"\textbf{Résultats attendus :}\par " + safe_latex(expected) + r"\par")
+    if detail.get("homework"):
+        parts.append(r"\medskip\begin{center}\textbf{IV. EXERCICES DE MAISON}\end{center}")
+        for index, homework in enumerate(detail["homework"], 1):
+            snapshot = homework["snapshot"]
+            parts.append(rf"\textbf{{Exercice {index}}}\par {snapshot_content(snapshot)}\par")
+            if homework.get("teacher_note"):
+                parts.append(labelled("Note", homework["teacher_note"]) + r"\par")
+    if detail.get("documents_used"):
+        parts.append(r"\begin{center}\textbf{DOCUMENTS UTILISÉS}\end{center}\begin{itemize}")
+        for document in detail["documents_used"]:
+            details = " — ".join(value for value in (document.get("author"), document.get("title"), document.get("edition"), document.get("note")) if value)
+            suffix = f" ({details})" if details and details != document["display_label"] else ""
+            parts.append(rf"\item {escape_text(document['display_label'] + suffix)}")
+        parts.append(r"\end{itemize}")
     parts.append(r"\end{document}")
     return "\n".join(parts)
 

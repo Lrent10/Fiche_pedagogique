@@ -225,6 +225,24 @@ class PedagogicalResource(Base):
     structure_kind: Mapped[str] = mapped_column(String(30), default="ATOMIC")
     level: Mapped[str] = mapped_column(String(30), default="4e")
     provenance_kind: Mapped[str] = mapped_column(String(30), default="SOURCED")
+    content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    content_format: Mapped[str] = mapped_column(String(20), default="LATEX", server_default="LATEX")
+    programme_version_id: Mapped[int | None] = mapped_column(ForeignKey("programme_versions.id"), nullable=True)
+    situation_id: Mapped[int | None] = mapped_column(ForeignKey("learning_situations.id"), nullable=True)
+    sequence_id: Mapped[int | None] = mapped_column(ForeignKey("sequences.id"), nullable=True)
+    primary_instruction_id: Mapped[int | None] = mapped_column(ForeignKey("guide_instructions.id"), nullable=True)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("source_documents.id"), nullable=True)
+    source_page: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    origin_type: Mapped[str] = mapped_column(String(40), default="CURATED_PROJECT", server_default="CURATED_PROJECT")
+    validation_status: Mapped[str] = mapped_column(String(30), default="CURATED", server_default="CURATED")
+    visibility_scope: Mapped[str] = mapped_column(String(30), default="CURATED_GLOBAL", server_default="CURATED_GLOBAL")
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=now, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=now, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    provenance_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    content_hash: Mapped[str] = mapped_column(String(64), default="", server_default="")
 
 
 class PedagogicalResourceVersion(Base):
@@ -275,6 +293,9 @@ class ResourceInstructionMapping(Base):
     mapping_kind: Mapped[str] = mapped_column(String(30), default="IMPLEMENTS")
     validation_status: Mapped[str] = mapped_column(String(30), default="SOURCE_CONFIRMED")
     note: Mapped[str] = mapped_column(Text, default="")
+    relevance: Mapped[str] = mapped_column(String(30), default="DIRECT", server_default="DIRECT")
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provenance_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     __table_args__ = (UniqueConstraint("resource_version_id", "instruction_id"),)
 
 
@@ -320,7 +341,61 @@ class SheetResourceInstance(Base):
     title: Mapped[str] = mapped_column(String(255))
     position: Mapped[int] = mapped_column(Integer)
     adaptation_note: Mapped[str] = mapped_column(Text, default="")
+    snapshot_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     __table_args__ = (CheckConstraint("(origin = 'LIBRARY_DERIVED' AND source_resource_version_id IS NOT NULL) OR (origin = 'LOCAL_ORIGINAL' AND source_resource_version_id IS NULL)", name="ck_sheet_resource_origin_source"), UniqueConstraint("teacher_revision_id", "position"))
+
+
+class TeacherSheetHomeworkSelection(Base):
+    __tablename__ = "teacher_sheet_homework_selections"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    teacher_revision_id: Mapped[int] = mapped_column(ForeignKey("teacher_sheet_revisions.id"), index=True)
+    pedagogical_resource_id: Mapped[int] = mapped_column(ForeignKey("pedagogical_resources.id"))
+    resource_version_id: Mapped[int] = mapped_column(ForeignKey("pedagogical_resource_versions.id"))
+    homework_usage_type: Mapped[str] = mapped_column(String(40))
+    selected_order: Mapped[int] = mapped_column(Integer)
+    teacher_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    selected_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    __table_args__ = (
+        UniqueConstraint("teacher_revision_id", "selected_order"),
+        UniqueConstraint("teacher_revision_id", "pedagogical_resource_id"),
+        CheckConstraint("homework_usage_type IN ('CURRENT_SCOPE','PRIOR_NOTION_REACTIVATION')", name="ck_homework_usage"),
+    )
+
+
+class TeacherSheetDocumentReference(Base):
+    __tablename__ = "teacher_sheet_document_references"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    teacher_revision_id: Mapped[int] = mapped_column(ForeignKey("teacher_sheet_revisions.id"), index=True)
+    origin: Mapped[str] = mapped_column(String(30))
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("source_documents.id"), nullable=True)
+    source_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    display_label: Mapped[str] = mapped_column(String(255))
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    edition: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    selected_order: Mapped[int] = mapped_column(Integer)
+    snapshot_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    __table_args__ = (
+        UniqueConstraint("teacher_revision_id", "selected_order"),
+        CheckConstraint("origin IN ('AUTO_DERIVED','MANUAL_REFERENCE')", name="ck_document_origin"),
+    )
+
+
+class PackageImportRecord(Base):
+    __tablename__ = "package_import_records"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    package_version: Mapped[str] = mapped_column(String(80))
+    schema_version: Mapped[str] = mapped_column(String(20))
+    manifest_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    imported_by: Mapped[str] = mapped_column(String(120), default="system")
+    resource_count: Mapped[int] = mapped_column(Integer)
+    source_count: Mapped[int] = mapped_column(Integer)
+    link_count: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30))
+    report_json: Mapped[str] = mapped_column(Text)
 
 
 class SheetBlockInstance(Base):
@@ -520,7 +595,7 @@ def protect_finalized_revisions(session: Session, _flush_context, _instances) ->
             if (history.deleted and history.deleted[0] == "FINALIZED") or (obj not in session.new and obj.status == "FINALIZED" and not history.added and (session.is_modified(obj) or obj in session.deleted)):
                 raise ValueError("Une révision enseignant finalisée est immuable.")
             continue
-        if isinstance(obj, (SessionCurriculumSegment, SheetResourceInstance, FlowItem, TeacherSheetCompetencySelection)):
+        if isinstance(obj, (SessionCurriculumSegment, SheetResourceInstance, FlowItem, TeacherSheetCompetencySelection, TeacherSheetHomeworkSelection, TeacherSheetDocumentReference)):
             family, revision_id = "TEACHER", obj.teacher_revision_id
             if isinstance(obj, TeacherSheetCompetencySelection):
                 previous = inspect(obj).attrs.teacher_revision_id.history.deleted

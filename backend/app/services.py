@@ -11,6 +11,102 @@ from . import models as m
 from .curriculum_level import CLASS_LEVEL_ERROR, CURRICULUM_LEVEL, class_label_matches_level
 
 
+PUBLIC_RESOURCE_VALIDATIONS = {"CURATED", "VALIDATED", "VERIFIED_SOURCE"}
+
+
+def teacher_identity(value: str | None) -> str:
+    return (value or "local-teacher").strip() or "local-teacher"
+
+
+def resource_matches_instruction(db: Session, resource: m.PedagogicalResource, instruction_id: int) -> bool:
+    instruction = db.get(m.InstructionGuide, instruction_id)
+    sequence = db.get(m.Sequence, instruction.sequence_id) if instruction else None
+    situation = db.get(m.SituationApprentissage, sequence.situation_id) if sequence else None
+    programme = db.get(m.ProgrammeVersion, situation.programme_version_id) if situation else None
+    return bool(
+        instruction
+        and sequence
+        and situation
+        and programme
+        and resource.level == programme.level
+        and (resource.programme_version_id is None or resource.programme_version_id == programme.id)
+        and (resource.situation_id is None or resource.situation_id == situation.id)
+        and (resource.sequence_id is None or resource.sequence_id == sequence.id)
+    )
+
+
+def is_resource_eligible_for_teacher_and_context(
+    db: Session,
+    resource: m.PedagogicalResource,
+    version: m.PedagogicalResourceVersion,
+    teacher_id: str | None,
+    instruction_ids: set[int] | None = None,
+) -> bool:
+    """Single current-use policy; historical sheet snapshots are intentionally outside it."""
+    if not resource.active or resource.validation_status in {"REJECTED", "ARCHIVED"}:
+        return False
+    if version.status != "AVAILABLE":
+        return False
+    owner = teacher_identity(teacher_id)
+    if resource.created_by != owner:
+        if resource.visibility_scope == "PRIVATE":
+            return False
+        if resource.validation_status not in PUBLIC_RESOURCE_VALIDATIONS:
+            return False
+        if resource.visibility_scope not in {"SHARED", "CURATED_GLOBAL", "SYSTEM_REFERENCE"}:
+            return False
+    if instruction_ids is None:
+        return True
+    if not instruction_ids:
+        return False
+    linked = set(
+        db.scalars(
+            select(m.ResourceInstructionMapping.instruction_id).where(
+                m.ResourceInstructionMapping.resource_version_id == version.id,
+                m.ResourceInstructionMapping.instruction_id.in_(instruction_ids),
+            )
+        )
+    )
+    if any(resource_matches_instruction(db, resource, instruction_id) for instruction_id in linked):
+        return True
+    # Resources predating P3 have no explicit curriculum anchors. Preserve
+    # their historical sequence-level use when one of their instruction links
+    # belongs to the same sequence as the requested context.
+    if all(
+        anchor is None
+        for anchor in (
+            resource.programme_version_id,
+            resource.situation_id,
+            resource.sequence_id,
+            resource.primary_instruction_id,
+        )
+    ):
+        context_sequences = set(
+            db.scalars(select(m.InstructionGuide.sequence_id).where(m.InstructionGuide.id.in_(instruction_ids)))
+        )
+        mapped_sequences = set(
+            db.scalars(
+                select(m.InstructionGuide.sequence_id)
+                .join(m.ResourceInstructionMapping, m.ResourceInstructionMapping.instruction_id == m.InstructionGuide.id)
+                .where(m.ResourceInstructionMapping.resource_version_id == version.id)
+            )
+        )
+        return bool(context_sequences & mapped_sequences) and any(
+            resource_matches_instruction(db, resource, instruction_id) for instruction_id in instruction_ids
+        )
+    return False
+
+
+def revision_instruction_ids(db: Session, revision_id: int) -> set[int]:
+    return set(
+        db.scalars(
+            select(m.SessionCurriculumSegment.instruction_id).where(
+                m.SessionCurriculumSegment.teacher_revision_id == revision_id
+            )
+        )
+    )
+
+
 def require_draft(revision) -> None:
     if revision is None:
         raise HTTPException(404, "Révision introuvable.")
@@ -68,14 +164,57 @@ def support_curriculum_level(db: Session, support: m.LearnerSupport) -> str:
     return levels.pop() if levels else support.level
 
 
-def copy_library_to_sheet(db: Session, revision_id: int, version_id: int, adaptation_note: str = "") -> m.SheetResourceInstance:
+def build_resource_snapshot(db: Session, version: m.PedagogicalResourceVersion) -> dict:
+    resource = db.get(m.PedagogicalResource, version.resource_id)
+    source = db.get(m.SourceDocument, resource.source_document_id) if resource and resource.source_document_id else None
+    blocks = list(db.scalars(select(m.PedagogicalBlock).where(m.PedagogicalBlock.resource_version_id == version.id).order_by(m.PedagogicalBlock.position)))
+    content = resource.content if resource and resource.content else "\n".join(block.content_latex for block in blocks)
+    return {
+        "resource_id": resource.id,
+        "resource_version_id": version.id,
+        "version_number": version.version_number,
+        "stable_code": resource.code,
+        "title": version.title,
+        "content": content,
+        "content_format": resource.content_format,
+        "resource_type": resource.resource_type,
+        "origin_type": resource.origin_type,
+        "validation_status": resource.validation_status,
+        "source_document_id": source.id if source else None,
+        "source_code": source.code if source else None,
+        "source_version": source.sha256 if source else None,
+        "source_label": source.title if source else None,
+        "source_document_type": source.document_type if source else None,
+        "source_authority": source.authority if source else None,
+        "source_page": resource.source_page,
+        "provenance": json.loads(version.provenance_json or resource.provenance_json or "{}")
+        if (version.provenance_json and version.provenance_json != "{}")
+        else json.loads(resource.provenance_json or "{}"),
+        "content_hash": resource.content_hash,
+    }
+
+
+def copy_library_to_sheet(
+    db: Session,
+    revision_id: int,
+    version_id: int,
+    adaptation_note: str = "",
+    *,
+    teacher_id: str | None = None,
+    commit: bool = True,
+) -> m.SheetResourceInstance:
     revision = db.get(m.TeacherSheetRevision, revision_id)
     require_draft(revision)
     version = db.get(m.PedagogicalResourceVersion, version_id)
     if not version:
         raise HTTPException(404, "Ressource introuvable.")
     if version.status != "AVAILABLE":
-        raise HTTPException(409, "Cette version de ressource est retirée et ne peut plus être sélectionnée.")
+        raise HTTPException(409, "Cette version de ressource n'est plus disponible.")
+    resource = db.get(m.PedagogicalResource, version.resource_id)
+    if not resource or not is_resource_eligible_for_teacher_and_context(
+        db, resource, version, teacher_id, revision_instruction_ids(db, revision_id)
+    ):
+        raise HTTPException(403, "Cette ressource n'est pas utilisable dans le périmètre de cette fiche.")
     position = (db.scalar(select(func.max(m.SheetResourceInstance.position)).where(m.SheetResourceInstance.teacher_revision_id == revision_id)) or 0) + 1
     instance = m.SheetResourceInstance(
         teacher_revision_id=revision_id,
@@ -84,6 +223,7 @@ def copy_library_to_sheet(db: Session, revision_id: int, version_id: int, adapta
         title=version.title,
         position=position,
         adaptation_note=adaptation_note,
+        snapshot_json=json.dumps(build_resource_snapshot(db, version), ensure_ascii=False),
     )
     db.add(instance)
     db.flush()
@@ -101,8 +241,11 @@ def copy_library_to_sheet(db: Session, revision_id: int, version_id: int, adapta
         db.add(copied)
         db.flush()
         db.add(m.FlowItem(teacher_revision_id=revision_id, block_instance_id=copied.id, phase_code="REALISATION", duration_minutes=5, position=next_flow + offset))
-    db.commit()
-    db.refresh(instance)
+    if commit:
+        db.commit()
+        db.refresh(instance)
+    else:
+        db.flush()
     return instance
 
 
@@ -360,7 +503,7 @@ def new_teacher_revision(db: Session, revision_id: int) -> m.TeacherSheetRevisio
     resource_map = {}
     resources = db.scalars(select(m.SheetResourceInstance).where(m.SheetResourceInstance.teacher_revision_id == source.id).order_by(m.SheetResourceInstance.position)).all()
     for resource in resources:
-        copied_resource = m.SheetResourceInstance(teacher_revision_id=target.id, origin=resource.origin, source_resource_version_id=resource.source_resource_version_id, title=resource.title, position=resource.position, adaptation_note=resource.adaptation_note)
+        copied_resource = m.SheetResourceInstance(teacher_revision_id=target.id, origin=resource.origin, source_resource_version_id=resource.source_resource_version_id, title=resource.title, position=resource.position, adaptation_note=resource.adaptation_note, snapshot_json=resource.snapshot_json)
         db.add(copied_resource)
         db.flush()
         resource_map[resource.id] = copied_resource.id
@@ -371,6 +514,10 @@ def new_teacher_revision(db: Session, revision_id: int) -> m.TeacherSheetRevisio
             block_map[block.id] = copied_block.id
     for flow in db.scalars(select(m.FlowItem).where(m.FlowItem.teacher_revision_id == source.id).order_by(m.FlowItem.position)).all():
         db.add(m.FlowItem(teacher_revision_id=target.id, block_instance_id=block_map.get(flow.block_instance_id), phase_code=flow.phase_code, teacher_action=flow.teacher_action, learner_action=flow.learner_action, strategy=flow.strategy, expected_result_latex=flow.expected_result_latex, duration_minutes=flow.duration_minutes, position=flow.position))
+    for row in db.scalars(select(m.TeacherSheetHomeworkSelection).where(m.TeacherSheetHomeworkSelection.teacher_revision_id == source.id)):
+        db.add(m.TeacherSheetHomeworkSelection(teacher_revision_id=target.id, pedagogical_resource_id=row.pedagogical_resource_id, resource_version_id=row.resource_version_id, homework_usage_type=row.homework_usage_type, selected_order=row.selected_order, teacher_note=row.teacher_note, snapshot_json=row.snapshot_json, selected_at=row.selected_at))
+    for row in db.scalars(select(m.TeacherSheetDocumentReference).where(m.TeacherSheetDocumentReference.teacher_revision_id == source.id)):
+        db.add(m.TeacherSheetDocumentReference(teacher_revision_id=target.id, origin=row.origin, source_document_id=row.source_document_id, source_version=row.source_version, display_label=row.display_label, author=row.author, title=row.title, edition=row.edition, note=row.note, selected_order=row.selected_order, snapshot_json=row.snapshot_json))
     authoring = json.loads(target.authoring_json or "{}")
     for selection in list(authoring.get("selections", {}).values()) + authoring.get("selection_history", []):
         selection["instance_id"] = resource_map.get(selection["instance_id"], selection["instance_id"])
@@ -420,7 +567,7 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
     resources = []
     for resource in db.scalars(select(m.SheetResourceInstance).where(m.SheetResourceInstance.teacher_revision_id == revision.id).order_by(m.SheetResourceInstance.position)).all():
         blocks = db.scalars(select(m.SheetBlockInstance).where(m.SheetBlockInstance.resource_instance_id == resource.id).order_by(m.SheetBlockInstance.position)).all()
-        resources.append({"id": resource.id, "origin": resource.origin, "source_resource_version_id": resource.source_resource_version_id, "title": resource.title, "adaptation_note": resource.adaptation_note, "position": resource.position, "blocks": [{"id": b.id, "block_type": b.block_type, "title": b.title, "content_latex": b.content_latex, "visible": b.visible, "position": b.position} for b in blocks]})
+        resources.append({"id": resource.id, "origin": resource.origin, "source_resource_version_id": resource.source_resource_version_id, "title": resource.title, "adaptation_note": resource.adaptation_note, "position": resource.position, "snapshot": json.loads(resource.snapshot_json or "{}"), "blocks": [{"id": b.id, "block_type": b.block_type, "title": b.title, "content_latex": b.content_latex, "visible": b.visible, "position": b.position} for b in blocks]})
     flows = db.scalars(select(m.FlowItem).where(m.FlowItem.teacher_revision_id == revision.id).order_by(m.FlowItem.position)).all()
     support_use = db.scalar(select(m.SupportUse).where(m.SupportUse.teacher_revision_id == revision.id))
     planned = db.scalar(select(m.PlannedSession).where(m.PlannedSession.sheet_id == sheet.id))
@@ -441,6 +588,8 @@ def sheet_detail(db: Session, revision_id: int) -> dict:
         "segments": [{"id": s.id, "instruction_id": i.id, "instruction_code": i.code, "text": i.text, "planned_minutes": s.planned_minutes} for s, i in segments],
         "resources": resources,
         "flow": [{"id": f.id, "block_instance_id": f.block_instance_id, "phase_code": f.phase_code, "teacher_action": f.teacher_action, "learner_action": f.learner_action, "strategy": f.strategy, "expected_result_latex": f.expected_result_latex, "duration_minutes": f.duration_minutes, "position": f.position} for f in flows],
+        "homework": [{"homework_usage_type": row.homework_usage_type, "selected_order": row.selected_order, "teacher_note": row.teacher_note, "snapshot": json.loads(row.snapshot_json)} for row in db.scalars(select(m.TeacherSheetHomeworkSelection).where(m.TeacherSheetHomeworkSelection.teacher_revision_id == revision.id).order_by(m.TeacherSheetHomeworkSelection.selected_order))],
+        "documents_used": [{"origin": row.origin, "display_label": row.display_label, "author": row.author, "title": row.title, "edition": row.edition, "note": row.note, "selected_order": row.selected_order} for row in db.scalars(select(m.TeacherSheetDocumentReference).where(m.TeacherSheetDocumentReference.teacher_revision_id == revision.id).order_by(m.TeacherSheetDocumentReference.selected_order))],
         "support_use": None if not support_use else {
             "support_revision_id": support_use.support_revision_id,
             "part_label": support_use.part_label,

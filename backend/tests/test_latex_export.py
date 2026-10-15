@@ -13,6 +13,23 @@ def test_safe_latex_rejects_file_input():
         safe_latex(r"\input{secret.txt}")
 
 
+@pytest.mark.parametrize("payload", [r"\openin1=/etc/passwd", r"\openin 1 = foo", r"\RequirePackage{x}", r"\csname input\endcsname"])
+def test_g3_file_access_is_rejected_before_pdf_compilation(payload):
+    with pytest.raises(ValueError, match="Commande LaTeX interdite"):
+        safe_latex(payload)
+
+
+def test_g3_rejected_payload_never_starts_pdf_engine(tmp_path, monkeypatch):
+    def unexpected_engine_call(*args, **kwargs):
+        pytest.fail("Le moteur PDF ne doit pas être lancé pour un contenu interdit.")
+
+    monkeypatch.setattr("app.exporter.subprocess.run", unexpected_engine_call)
+    output = tmp_path / "blocked.pdf"
+    with pytest.raises(ValueError, match="Commande LaTeX interdite"):
+        compile_pdf(safe_latex(r"\openin1=/etc/passwd"), output)
+    assert not output.exists()
+
+
 def test_teacher_template_contains_three_required_sections():
     detail = {
         "code": "TEST",

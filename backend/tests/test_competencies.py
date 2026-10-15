@@ -196,7 +196,7 @@ def test_migration_and_P2_T24_history(tmp_path, existing):
     result = subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], cwd=Path(__file__).resolve().parents[1], env={**os.environ, 'DATABASE_URL': url, 'EXPORT_DIR': str(tmp_path / 'exports')}, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     with engine.connect() as connection:
-        assert connection.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0006_competency_catalog'
+        assert connection.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == '0007_pedagogical_resources'
         assert not connection.execute(text('PRAGMA foreign_key_check')).all()
         for table in new_tables: assert connection.execute(text(f'SELECT count(*) FROM {table}')).scalar_one() == 0
         for table, rows in before.items(): assert rows == list(connection.execute(text(f'SELECT * FROM {table} ORDER BY id')))

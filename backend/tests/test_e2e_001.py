@@ -19,7 +19,13 @@ def test_e2e_001_complete_vertical_slice(client):
         sheet = response.json()
 
     first_block = sheet["resources"][0]["blocks"][0]
-    edited_source = r"Développe $(2x+1)^2$ puis représente $a^2$ avec \badcommand{conservée}."
+    # G4 deliberately rejects unknown commands instead of persisting them for PDF fallback.
+    rejected_source = r"Développe $(2x+1)^2$ puis représente $a^2$ avec \badcommand{conservée}."
+    rejected = client.put(f"/api/sheets/{revision_id}/blocks/{first_block['id']}", json={"content_latex": rejected_source})
+    assert rejected.status_code == 422
+    unchanged = client.get(f"/api/sheets/{revision_id}").json()
+    assert unchanged["resources"][0]["blocks"][0]["content_latex"] == first_block["content_latex"]
+    edited_source = r"Développe $(2x+1)^2$ puis représente $a^2$ avec \textbf{une figure}."
     sheet = client.put(f"/api/sheets/{revision_id}/blocks/{first_block['id']}", json={"content_latex": edited_source}).json()
     assert sheet["resources"][0]["blocks"][0]["content_latex"] == edited_source
 

@@ -161,6 +161,12 @@ def test_manual_replacement_keeps_history_and_edits(client):
     assert any(x['id'] == first['instance_id'] for x in replaced['resources'])
 
 
+def test_P3G1_MAJ_SNAP_001_authoring_selection_snapshot_is_complete(client):
+    sheet = compose(client, True)
+    snapshot = sheet['resources'][0]['snapshot']
+    assert {'stable_code', 'resource_version_id', 'resource_type', 'content', 'content_format', 'title', 'origin_type', 'validation_status', 'provenance', 'content_hash'} <= set(snapshot)
+
+
 @pytest.mark.parametrize('target', ['LEARNER_INITIAL', 'LEARNER_COMPLETED'])
 def test_LEARNER_001_002_003_004_005(target):
     types = ['INSTRUCTION', 'DEFINITION', 'PROPERTY', 'FIGURE', 'EXPECTED_RESPONSE', 'RESPONSE_SPACE']

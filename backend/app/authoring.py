@@ -4,14 +4,15 @@ import random
 from uuid import uuid4
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from . import models as m
 from .database import get_db
-from .services import require_draft, sheet_detail
+from .services import build_resource_snapshot, is_resource_eligible_for_teacher_and_context, require_draft, sheet_detail
+from .latex_safety import ensure_safe_latex
 
 router = APIRouter(prefix="/api/authoring", tags=["authoring"])
 SOURCE_KINDS = {"OFFICIAL_PROGRAM", "OFFICIAL_GUIDE", "INSPECTOR_VALIDATED", "TEACHER_COMMUNITY", "BOOK_SOURCE", "LOCAL_TEACHER", "DEMO_UNSOURCED"}
@@ -45,6 +46,11 @@ class ResourceBlock(BaseModel):
     block_type: str
     title: str
     content_latex: str = Field(min_length=1)
+
+    @field_validator("content_latex")
+    @classmethod
+    def safe_resource_latex(cls, value: str) -> str:
+        return ensure_safe_latex(value)
 
 
 class ResourceCreate(BaseModel):
@@ -171,16 +177,33 @@ def preview(payload: Scope, db: Session = Depends(get_db)):
 
 
 def resource_provenance(db, version, resource):
-    saved = json.loads(version.provenance_json or "{}")
+    try:
+        saved = json.loads(version.provenance_json or resource.provenance_json or "{}")
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise HTTPException(422, f"Provenance invalide pour la ressource {resource.code}.") from exc
+    if not isinstance(saved, dict):
+        raise HTTPException(422, f"Provenance invalide pour la ressource {resource.code}.")
     if saved:
-        return saved
+        if "source_kind" in saved:
+            return saved
+        source = db.get(m.SourceDocument, resource.source_document_id) if resource.source_document_id else None
+        return {
+            **saved,
+            "source_kind": "UNKNOWN_NOT_ASSERTED",
+            "source_ref": source.title if source else None,
+            "source_version": source.sha256 if source else None,
+            "page_label": resource.source_page,
+            "origin_type": resource.origin_type,
+            "validation_status": resource.validation_status,
+            "adaptation": False,
+        }
     sources = occurrence(db, "PedagogicalResourceVersion", version.id)
     # Historical source-derived transcriptions are explicitly labelled adaptations.
     return {"source_kind": sources[0]["source_kind"] if sources else ("DEMO_UNSOURCED" if resource.provenance_kind == "DEMO_NON_SOURCE" else "LOCAL_TEACHER"), "source_ref": sources[0]["source_ref"] if sources else "Ressource historique", "source_version": sources[0]["source_version"] if sources else str(version.version_number), "validation_status": "NON_REVU", "adaptation": bool(sources), "sources": sources, "author": ""}
 
 
 def priority(provenance):
-    kind = provenance["source_kind"]
+    kind = provenance.get("source_kind")
     if kind in {"OFFICIAL_GUIDE", "OFFICIAL_PROGRAM"}:
         return 0
     if provenance.get("validation_status") == "INSPECTOR_VALIDATED" or kind == "INSPECTOR_VALIDATED":
@@ -188,7 +211,7 @@ def priority(provenance):
     return {"TEACHER_COMMUNITY": 2, "BOOK_SOURCE": 3, "LOCAL_TEACHER": 4, "DEMO_UNSOURCED": 5}.get(kind, 5)
 
 
-def candidates(db, instruction_id, allow_demo=False):
+def candidates(db, instruction_id, allow_demo=False, teacher_id=None):
     instruction = db.get(m.InstructionGuide, instruction_id)
     if not instruction:
         raise HTTPException(404, "Instruction introuvable.")
@@ -201,10 +224,10 @@ def candidates(db, instruction_id, allow_demo=False):
             continue
         version = db.get(m.PedagogicalResourceVersion, mapping.resource_version_id)
         resource = db.get(m.PedagogicalResource, version.resource_id)
-        if version.status != "AVAILABLE" or resource.level != programme.level:
+        if not is_resource_eligible_for_teacher_and_context(db, resource, version, teacher_id, {instruction_id}):
             continue
         prov = resource_provenance(db, version, resource)
-        if prov["source_kind"] == "DEMO_UNSOURCED" and not allow_demo:
+        if prov.get("source_kind") == "DEMO_UNSOURCED" and not allow_demo:
             continue
         blocks = [{"id": b.id, "block_type": b.block_type, "title": b.title, "content_latex": b.content_latex} for b in db.scalars(select(m.PedagogicalBlock).where(m.PedagogicalBlock.resource_version_id == version.id).order_by(m.PedagogicalBlock.position))]
         if not any(b["block_type"] not in TEACHER_ONLY for b in blocks):
@@ -214,8 +237,8 @@ def candidates(db, instruction_id, allow_demo=False):
 
 
 @router.get("/instructions/{instruction_id}/candidates")
-def list_candidates(instruction_id: int, allow_demo: bool = False, db: Session = Depends(get_db)):
-    return candidates(db, instruction_id, allow_demo)
+def list_candidates(instruction_id: int, allow_demo: bool = False, x_teacher_id: str | None = Header(None), db: Session = Depends(get_db)):
+    return candidates(db, instruction_id, allow_demo, x_teacher_id)
 
 
 @router.post("/resources", status_code=201)
@@ -268,7 +291,8 @@ def select_resource(db, revision, instruction_id, candidate, origin):
                 block.visible = False
         state.setdefault("selection_history", []).append(previous)
     position = (db.scalar(select(func.max(m.SheetResourceInstance.position)).where(m.SheetResourceInstance.teacher_revision_id == revision.id)) or 0) + 1
-    instance = m.SheetResourceInstance(teacher_revision_id=revision.id, origin="LIBRARY_DERIVED", source_resource_version_id=candidate["id"], title=candidate["title"], position=position, adaptation_note="Choix enseignant" if origin == "COMMUNITY_SELECTED" else "Composition automatique, à relire")
+    version = db.get(m.PedagogicalResourceVersion, candidate["id"])
+    instance = m.SheetResourceInstance(teacher_revision_id=revision.id, origin="LIBRARY_DERIVED", source_resource_version_id=candidate["id"], title=candidate["title"], position=position, adaptation_note="Choix enseignant" if origin == "COMMUNITY_SELECTED" else "Composition automatique, à relire", snapshot_json=json.dumps(build_resource_snapshot(db, version), ensure_ascii=False))
     db.add(instance)
     db.flush()
     flow_position = (db.scalar(select(func.max(m.FlowItem.position)).where(m.FlowItem.teacher_revision_id == revision.id)) or 0) + 1
@@ -283,15 +307,15 @@ def select_resource(db, revision, instruction_id, candidate, origin):
 
 
 @router.post("/compose", status_code=201)
-def compose(payload: Compose, db: Session = Depends(get_db)):
-    return compose_sheet(payload, db)
+def compose(payload: Compose, x_teacher_id: str | None = Header(None), db: Session = Depends(get_db)):
+    return compose_sheet(payload, db, teacher_id=x_teacher_id)
 
 
-def compose_sheet(payload: Compose, db: Session, *, commit=True):
+def compose_sheet(payload: Compose, db: Session, *, teacher_id=None, commit=True):
     if payload.scope == "CLASS":
         raise HTTPException(422, "Choisissez une SA, une séquence ou une instruction pour composer une fiche.")
     filled = autofill(db, payload, payload.instruction_ids)
-    pools = {i["id"]: candidates(db, i["id"], payload.allow_demo) for i in filled["instructions"]}
+    pools = {i["id"]: candidates(db, i["id"], payload.allow_demo, teacher_id) for i in filled["instructions"]}
     if payload.automatic and any(not pool for pool in pools.values()):
         missing = [i["code"] for i in filled["instructions"] if not pools[i["id"]]]
         raise HTTPException(422, "Aucune ressource compatible pour : " + ", ".join(missing) + ". Ajoutez une consigne locale ou réduisez le périmètre.")
@@ -335,6 +359,9 @@ def compose_sheet(payload: Compose, db: Session, *, commit=True):
                 chosen[candidate["id"]] = json.loads(revision.authoring_json)["selections"][str(instruction["id"])]
     from .competencies import initialize_selection
     initialize_selection(db, revision)
+    if payload.automatic:
+        from .resource_library import sync_documents
+        sync_documents(db, revision.id, commit=False)
     if commit:
         db.commit()
     else:
@@ -343,17 +370,19 @@ def compose_sheet(payload: Compose, db: Session, *, commit=True):
 
 
 @router.put("/sheets/{revision_id}/selection")
-def replace_selection(revision_id: int, payload: Selection, db: Session = Depends(get_db)):
+def replace_selection(revision_id: int, payload: Selection, x_teacher_id: str | None = Header(None), db: Session = Depends(get_db)):
     revision = db.get(m.TeacherSheetRevision, revision_id)
     require_draft(revision)
     if not db.scalar(select(m.SessionCurriculumSegment.id).where(m.SessionCurriculumSegment.teacher_revision_id == revision_id, m.SessionCurriculumSegment.instruction_id == payload.instruction_id)):
         raise HTTPException(422, "Instruction extérieure à cette fiche.")
     if not json.loads(revision.authoring_json or "{}"):
         raise HTTPException(422, "Cette fiche utilise le parcours historique.")
-    candidate = next((c for c in candidates(db, payload.instruction_id, payload.allow_demo) if c["id"] == payload.resource_version_id), None)
+    candidate = next((c for c in candidates(db, payload.instruction_id, payload.allow_demo, x_teacher_id) if c["id"] == payload.resource_version_id), None)
     if not candidate:
         raise HTTPException(422, "Consigne incompatible avec cette instruction.")
     select_resource(db, revision, payload.instruction_id, candidate, "COMMUNITY_SELECTED")
+    from .resource_library import sync_documents
+    sync_documents(db, revision_id, commit=False)
     db.commit()
     return sheet_detail(db, revision_id)
 
