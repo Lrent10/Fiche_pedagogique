@@ -37,9 +37,11 @@ export type SheetDetail = {
   identification: Record<string, string>
   planning: Record<string, string>
   segments: { id: number; instruction_id: number; instruction_code: string; text: string; planned_minutes: number }[]
-  resources: { id: number; origin: string; source_resource_version_id: number | null; title: string; adaptation_note: string; position: number; blocks: Block[] }[]
+  resources: { id: number; origin: string; source_resource_version_id: number | null; title: string; adaptation_note: string; position: number; snapshot?: Record<string, unknown>; blocks: Block[] }[]
   flow: { id: number; block_instance_id: number; phase_code: string; teacher_action: string; learner_action: string; strategy: string; expected_result_latex: string; duration_minutes: number; position: number }[]
   support_use: { support_revision_id: number; part_label: string; selected_block_ids: number[] } | null
+  homework?: { homework_usage_type: string; selected_order: number; teacher_note?: string; snapshot: Record<string, unknown> }[]
+  documents_used?: { origin: string; display_label: string; author?: string; title?: string; edition?: string; note?: string; selected_order: number }[]
 }
 
 export type SessionDurations = { slot_minutes: number; break_minutes: number; default_break_minutes: number; break_override: boolean; pedagogical_minutes?: number }

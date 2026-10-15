@@ -211,6 +211,17 @@ describe('P2 compétences et sauvegarde avant navigation', () => {
   })
 })
 
+describe('DEF-P3-01 état persistant de sélection', () => {
+  afterEach(cleanup)
+
+  it('affiche clairement qu’une activité est déjà sélectionnée', () => {
+    const resource = { id: 42, code: 'RES-42', title: 'Activité retenue', resource_type: 'ACTIVITY', provenance_kind: 'SOURCED', summary: 'Résumé', estimated_minutes: 10, blocks: [], mappings: [{ instruction_id: 1, instruction_code: 'INS-1', text: 'Instruction', validation_status: 'CURATED' }], sources: [] }
+    render(<SheetEditor sheet={sheet({ segments: [{ id: 1, instruction_id: 1, instruction_code: 'INS-1', text: 'Instruction', planned_minutes: 20 }], resources: [{ id: 9, origin: 'LIBRARY_DERIVED', source_resource_version_id: 42, title: 'Activité retenue', adaptation_note: '', position: 1, blocks: [] }] })} setSheet={vi.fn()} instructions={[]} resources={[resource]} notify={vi.fn()} refresh={async () => undefined} close={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /3 Choix des activités/ }))
+    expect(screen.getByRole('button', { name: '✓ Activité sélectionnée' }).hasAttribute('disabled')).toBe(true)
+  })
+})
+
 describe('contrat de persistance du wizard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
