@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
@@ -52,9 +52,16 @@ from .services import (
 
 settings.export_dir.mkdir(parents=True, exist_ok=True)
 
+from .database import engine, Base, SessionLocal
+from .seed import seed_database
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Crée automatiquement les tables si elles n'existent pas
+    Base.metadata.create_all(bind=engine)
+    # Injecte les programmes et fiches initiales si la base est vide
+    with SessionLocal() as db:
+        seed_database(db)
     yield
 
 
@@ -73,6 +80,8 @@ from .sessions import router as sessions_router, historical_progress
 app.include_router(sessions_router)
 from .competencies import router as competencies_router
 app.include_router(competencies_router)
+from .resource_library import router as resource_library_router
+app.include_router(resource_library_router)
 
 
 @app.get("/api/health")
@@ -121,13 +130,17 @@ def instructions(sequence_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @app.get("/api/resources")
-def resources(instruction_id: int | None = None, db: Session = Depends(get_db)):
+def resources(instruction_id: int | None = None, x_teacher_id: str | None = Header(None), db: Session = Depends(get_db)):
     from .authoring import resource_provenance
+    from .services import is_resource_eligible_for_teacher_and_context
     query = select(m.PedagogicalResourceVersion, m.PedagogicalResource).join(m.PedagogicalResource).where(m.PedagogicalResourceVersion.status == "AVAILABLE")
     if instruction_id:
         query = query.join(m.ResourceInstructionMapping).where(m.ResourceInstructionMapping.instruction_id == instruction_id)
     result = []
     for version, resource in db.execute(query.order_by(m.PedagogicalResourceVersion.id)).all():
+        context = {instruction_id} if instruction_id is not None else None
+        if not is_resource_eligible_for_teacher_and_context(db, resource, version, x_teacher_id, context):
+            continue
         blocks = db.scalars(select(m.PedagogicalBlock).where(m.PedagogicalBlock.resource_version_id == version.id).order_by(m.PedagogicalBlock.position)).all()
         mappings = db.execute(select(m.ResourceInstructionMapping, m.InstructionGuide).join(m.InstructionGuide).where(m.ResourceInstructionMapping.resource_version_id == version.id)).all()
         occurrences = db.execute(select(m.SourceOccurrence, m.SourceDocument).join(m.SourceDocument).where(m.SourceOccurrence.entity_type == "PedagogicalResourceVersion", m.SourceOccurrence.entity_id == version.id)).all()
@@ -259,8 +272,10 @@ def update_metadata(revision_id: int, payload: SheetMetadataUpdate, db: Session 
 
 
 @app.post("/api/sheets/{revision_id}/resources/library", status_code=201)
-def add_sheet_library(revision_id: int, payload: AddLibraryResource, db: Session = Depends(get_db)):
-    copy_library_to_sheet(db, revision_id, payload.resource_version_id, payload.adaptation_note)
+def add_sheet_library(revision_id: int, payload: AddLibraryResource, x_teacher_id: str | None = Header(None), db: Session = Depends(get_db)):
+    copy_library_to_sheet(db, revision_id, payload.resource_version_id, payload.adaptation_note, teacher_id=x_teacher_id)
+    from .resource_library import sync_documents
+    sync_documents(db, revision_id)
     return sheet_detail(db, revision_id)
 
 
