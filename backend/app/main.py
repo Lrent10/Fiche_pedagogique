@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
@@ -52,14 +52,16 @@ from .services import (
 
 settings.export_dir.mkdir(parents=True, exist_ok=True)
 
+
 from .database import engine, Base, SessionLocal
 from .seed import seed_database
 
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Crée automatiquement les tables si elles n'existent pas
+    # Crée automatiquement les tables SQLite si elles n'existent pas
     Base.metadata.create_all(bind=engine)
-    # Injecte les programmes et fiches initiales si la base est vide
+    # Injecte les programmes officiels de 4e si la base est vide
     with SessionLocal() as db:
         seed_database(db)
     yield
@@ -468,7 +470,7 @@ def update_support_block(revision_id: int, block_id: int, payload: BlockUpdate, 
 
 
 @app.put("/api/supports/{revision_id}/blocks/{block_id}/position")
-def move_support_block(revision_id: int, block_id: int, payload: PositionUpdate, db: Session = Depends(get_db)):
+def move_support_block(revision_id: int, block_id: int, payload: PositionUpdate = Body(...), db: Session = Depends(get_db)):
     revision = db.get(m.LearnerSupportRevision, revision_id)
     require_draft(revision)
     block = db.execute(

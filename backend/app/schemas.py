@@ -1,6 +1,15 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from .latex_safety import ensure_safe_latex
+
+
+class LatexFragmentInput(BaseModel):
+    @field_validator("content_latex", "expected_result_latex", check_fields=False)
+    @classmethod
+    def safe_fragment(cls, value: str | None) -> str | None:
+        return ensure_safe_latex(value) if value is not None else None
 
 
 class SheetCreate(BaseModel):
@@ -15,13 +24,13 @@ class AddLibraryResource(BaseModel):
     adaptation_note: str = ""
 
 
-class AddLocalResource(BaseModel):
+class AddLocalResource(LatexFragmentInput):
     title: str
     block_type: str = "ACTIVITY"
     content_latex: str
 
 
-class BlockUpdate(BaseModel):
+class BlockUpdate(LatexFragmentInput):
     title: str | None = None
     content_latex: str | None = None
     visible: bool | None = None
@@ -31,7 +40,7 @@ class FlowUpdate(BaseModel):
     ordered_block_ids: list[int]
 
 
-class FlowItemUpdate(BaseModel):
+class FlowItemUpdate(LatexFragmentInput):
     teacher_action: str | None = None
     learner_action: str | None = None
     strategy: str | None = None
@@ -77,6 +86,9 @@ class ExportCreate(BaseModel):
 
 class PositionUpdate(BaseModel):
     direction: Literal["UP", "DOWN"]
+
+
+PositionUpdate.model_rebuild()
 
 
 class SheetMetadataUpdate(BaseModel):
