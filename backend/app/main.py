@@ -93,18 +93,35 @@ def health():
 
 @app.get("/api/dashboard")
 def dashboard(db: Session = Depends(get_db)):
-    return {
-        "draft_sheets": db.scalar(select(func.count()).select_from(m.TeacherSheetRevision).where(m.TeacherSheetRevision.status == "DRAFT")),
-        "finalized_sheets": db.scalar(select(func.count()).select_from(m.TeacherSheetRevision).where(m.TeacherSheetRevision.status == "FINALIZED")),
-        "resources": db.scalar(select(func.count()).select_from(m.PedagogicalResourceVersion)),
-        "supports": db.scalar(select(func.count()).select_from(m.LearnerSupportRevision)),
-        "open_source_issues": db.scalar(select(func.count()).select_from(m.SourceIssue).where(m.SourceIssue.status == "OPEN")),
-    }
+    try:
+        return {
+            "draft_sheets": db.scalar(select(func.count()).select_from(m.TeacherSheetRevision).where(m.TeacherSheetRevision.status == "DRAFT")),
+            "finalized_sheets": db.scalar(select(func.count()).select_from(m.TeacherSheetRevision).where(m.TeacherSheetRevision.status == "FINALIZED")),
+            "resources": db.scalar(select(func.count()).select_from(m.PedagogicalResourceVersion)),
+            "supports": db.scalar(select(func.count()).select_from(m.LearnerSupportRevision)),
+            "open_source_issues": db.scalar(select(func.count()).select_from(m.SourceIssue).where(m.SourceIssue.status == "OPEN")),
+        }
+    except Exception:
+        # Auto-réparation immédiate si les tables ne sont pas encore créées
+        Base.metadata.create_all(bind=engine)
+        seed_database(db)
+        return {
+            "draft_sheets": db.scalar(select(func.count()).select_from(m.TeacherSheetRevision).where(m.TeacherSheetRevision.status == "DRAFT")) or 0,
+            "finalized_sheets": db.scalar(select(func.count()).select_from(m.TeacherSheetRevision).where(m.TeacherSheetRevision.status == "FINALIZED")) or 0,
+            "resources": db.scalar(select(func.count()).select_from(m.PedagogicalResourceVersion)) or 0,
+            "supports": db.scalar(select(func.count()).select_from(m.LearnerSupportRevision)) or 0,
+            "open_source_issues": db.scalar(select(func.count()).select_from(m.SourceIssue).where(m.SourceIssue.status == "OPEN")) or 0,
+        }
 
 
 @app.get("/api/curriculum")
 def curriculum(db: Session = Depends(get_db)):
-    situations = db.scalars(select(m.SituationApprentissage).order_by(m.SituationApprentissage.position)).all()
+    try:
+        situations = db.scalars(select(m.SituationApprentissage).order_by(m.SituationApprentissage.position)).all()
+    except Exception:
+        Base.metadata.create_all(bind=engine)
+        seed_database(db)
+        situations = db.scalars(select(m.SituationApprentissage).order_by(m.SituationApprentissage.position)).all()
     result = []
     for situation in situations:
         allocations = db.execute(select(m.CurriculumTimeAllocation, m.SourceDocument).join(m.SourceDocument).where(m.CurriculumTimeAllocation.situation_id == situation.id)).all()
